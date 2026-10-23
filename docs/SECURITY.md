@@ -12,7 +12,7 @@ AgentVault limits what an agent can do with credentials through grants, human ap
 | Origin and request enforcement | Worker; `src/browser-worker/guard.ts`, `src/browser-worker/session.ts` |
 | Tool validation | Shared Zod schemas, revalidated by broker; `src/shared/tools.ts` |
 | Secret output filtering | `src/browser-worker/snapshot.ts`, `src/browser-worker/sanitize.ts` |
-| Native storage | Helper Keychain implementation, still unverified on macOS |
+| Native storage | Helper Keychain implementation, verified on macOS for a fake-account login |
 
 The worker is trusted with credentials and live cookies. Broker storage includes plaintext usernames and order metadata, but no persisted passwords or cookies. Same-user Docker access defeats container separation. Scrubbing and prompt-injection flags have documented limits; neither replaces capability enforcement.
 

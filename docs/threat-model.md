@@ -58,7 +58,7 @@ Test names are from `test/e2e/security.test.ts` unless noted.
 | 8 | Order changed after user saw it | Approval hash over summary re-read before click | `an approval does not cover an order that changed after the user saw it` | Binds to DOM display, not server cart |
 | 9 | Site without verified checkout | `manual_checkout_required`; checkout-like non-GET blocked | `sites without a verified checkout adapter force manual checkout` | Best-effort regex |
 | 10 | Compromised worker mints approvals | Approvals exist only in broker DB; `consume` needs an `approved` row | `a compromised worker cannot mint approvals: consume without an approved record is denied`, `the internal consume endpoint refuses callers without the worker token` | Worker can still act inside an approved, unexpired window |
-| 11 | Fake helper or forged approval | Pinned helper key, signed responses bound to nonce and request id | `approvals from an unpaired helper key are rejected` | Swift implementation unverified |
+| 11 | Fake helper or forged approval | Pinned helper key, signed responses bound to nonce and request id | `approvals from an unpaired helper key are rejected` | Swift helper paired and approved a login on macOS; forged-approval rejection not exercised |
 | 12 | Cross-account or cross-agent use | Grants, site match, session ownership | `cannot use an account from another site, or another agent's session` | None known |
 | 13 | Helper unreachable or user absent | `unavailable` treated as denied | `denied or unavailable approval leaves the session signed out` | Denial of service |
 | 14 | Session bleed between sessions | One Chromium context per session | `concurrent sessions are isolated from each other` | Shared Chromium process |
