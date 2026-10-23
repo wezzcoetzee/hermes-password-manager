@@ -85,7 +85,7 @@ sequenceDiagram
   U-->>N: approve
   N->>N: read Keychain, seal to broker sealing key
   N-->>B: signed response bound to nonce, sealed credential
-  B->>B: verify signature, requestId; unseal
+  B->>B: verify signature and requestId, then unseal
   B->>W: login(username, password)
   W->>W: goto login.url, check origin, fill, submit, wait for successPath
   W-->>B: ok
