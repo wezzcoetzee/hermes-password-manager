@@ -38,6 +38,8 @@ flowchart LR
   BROKER <--> WORKER
   BROKER <-->|signed| HELPER
   HUMAN((User)) -->|native prompt + Touch ID| HELPER
+  HUMAN -->|Telegram tap, chat grants| TG[AgentVault bot]
+  BROKER -->|long poll, bot token| TG
 ```
 
 The worker is inside the TCB for credentials: it types the password and holds the logged-in cookies. Compromise of the worker exposes any password used since it started. It cannot approve purchases.
@@ -66,6 +68,9 @@ Test names are from `test/e2e/security.test.ts` unless noted.
 | 16 | Audit leaks secrets or is missing | Audit rows carry ids and reasons only | `records security events without secrets` | Audit lives in the same DB the broker owner can edit |
 | 17 | Network attacker reaches broker | Agent port published on `127.0.0.1` only; worker has no published port | none (compose config) | Other local users can reach loopback; they still need the token |
 | 18 | Replay of helper requests | ts + nonce, 30s skew, nonce cache | `test/unit/helper-protocol.test.ts` | Swift side unverified |
+| 19 | Agent approves its own login | Grant mode set by admin CLI only; chat decisions come from Telegram via AgentVault's bot, counted only from the configured user's private chat, bound to the request id, single use, 120s | `chat approval counts only a tap from the configured user and then releases without a native prompt`, `a chat denial, or no configured bot, leaves the session signed out` | Telegram account takeover approves logins |
+| 20 | Broker marks grants `auto` to release passwords | Helper skips its prompt only for accounts with its own `unattended` flag, set with confirmation and Touch ID | `auto grants skip the prompt only for accounts the helper also marked unattended` | Accounts marked unattended are exposed to a compromised broker; Swift path not exercised |
+| 21 | Auto-approved spending | Transaction approval always uses the native prompt | `auto grants never auto-approve purchases` | None known |
 
 ## Same-macOS-user limitation
 
@@ -75,7 +80,7 @@ AgentVault does not isolate Hermes from your own macOS user. If Hermes has a ter
 - read `secrets/worker_token` and call the worker directly;
 - read the agent token and other files under `~/.agentvault`.
 
-What still holds in that case: the native prompt and Touch ID. Passwords stay in the Keychain until you approve a login, and a purchase needs a helper-signed approval. A fully compromised broker cannot forge helper signatures, but it can request logins and orders for prompts you might approve. Do not approve prompts you did not expect.
+What still holds in that case: the native prompt and Touch ID. Passwords stay in the Keychain until you approve a login, and a purchase needs a helper-signed approval. The exception is accounts you marked unattended for chat or auto grants: the helper releases those without a prompt whenever the broker asks. A fully compromised broker cannot forge helper signatures, but it can request logins and orders for prompts you might approve. Do not approve prompts you did not expect.
 
 Strongest practical isolation: run Hermes under a separate standard macOS user that is not in the docker group, has no Docker Desktop access, and cannot read the AgentVault install directory or `~/.agentvault` of the operator. The adapter then needs only the loopback port and its own token file. This is not set up by the install script and has not been tested.
 

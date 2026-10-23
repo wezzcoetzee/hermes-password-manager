@@ -17,11 +17,13 @@ Known gaps. Docker, MCP and signatures do not make this system secure by themsel
 13. **Prompt-injection detection is advisory.** Six regexes. Real defence is limited capability plus human approval.
 14. **Usernames are stored unencrypted** in SQLite (`accounts.username`). Not secrets, but PII. Order totals and merchant names are in `transaction_approvals`.
 15. **No rate limiting** on tool calls, login requests or prompts. A looping agent can spam you with prompts. Only a cap of 8 concurrent browser sessions exists.
-16. **Locked Mac or no GUI session.** The helper returns `unavailable` (or never answers; the broker times out after about 130s). The broker treats it as denied and never auto-approves. Logins and purchases stop working until you are present.
+16. **Locked Mac or no GUI session.** The helper returns `unavailable` (or never answers; the broker times out after about 130s). The broker treats it as denied. Logins on `prompt` grants and all purchases stop working until you are present; `chat` and `auto` grants are the opt-in way around this for logins.
 17. **Pairing is trust on first use.** `agentvault pair` pins whatever key the helper prints. Anyone who can run admin commands can re-pair.
 18. **Audit log is not tamper-evident.** It lives in the SQLite DB that the broker owner can edit.
 19. **Worker-broker traffic is plain HTTP** with a shared token on an internal network. Anything on that network with the token can call the worker.
-20. **Real sites are untested.** Only the mock shop has run. Bot detection, 2FA, CAPTCHAs and changing markup are unaddressed; see the pilot guidance in [operations.md](operations.md#phase-6-real-site-pilot).
+20. **Chat and auto grants remove the native prompt from logins.** An `auto` grant signs in with no human at all. A `chat` grant is only as strong as your Telegram account, and Telegram sees the agent name, site, account id and request id. Both need the account's `unattended` flag in the helper, so a compromised broker can release those passwords without asking. Purchases still need the native prompt. See [ADR 0007](adr/0007-configurable-login-approval.md).
+21. **Unattended release is unverified on macOS.** The Swift `unattended` path compiles but has not been run. Credentials are stored `WhenUnlockedThisDeviceOnly`, so a release while the screen is locked may fail and return an error.
+22. **Real sites are untested.** Only the mock shop has run. Bot detection, 2FA, CAPTCHAs and changing markup are unaddressed; see the pilot guidance in [operations.md](operations.md#phase-6-real-site-pilot).
 
 ## Hardening from the adversarial review
 

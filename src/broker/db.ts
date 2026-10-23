@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import type { ApprovalMode } from '../shared/approval.ts'
 
 export type Db = DatabaseSync
 
@@ -27,7 +28,7 @@ export function openDb(path: string, migrationsDir: string): Db {
 
 export interface AgentRow { id: string; name: string }
 export interface AccountRow { id: string; site_id: string; username: string; label: string; max_session_minutes: number }
-export interface GrantRow { allow_transactions: number }
+export interface GrantRow { allow_transactions: number; approval: ApprovalMode }
 export interface SessionRow { id: string; agent_id: string; site_id: string; account_id: string | null; state: string; expires_at: number }
 export interface ApprovalRow { id: string; session_id: string; agent_id: string; summary_hash: string; status: string; expires_at: number; merchant: string; total: string; currency: string }
 

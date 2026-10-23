@@ -6,6 +6,7 @@ struct SiteRef: Decodable { let name: String; let origin: String }
 struct LoginRequest: Decodable {
     struct Account: Decodable { let id: String; let username: String }
     let requestId: String; let agent: String; let site: SiteRef; let account: Account; let durationMinutes: Int
+    let unattended: Bool? // the broker already has chat or auto consent
 }
 struct OrderItem: Decodable { let name: String; let variant: String; let quantity: String; let unitPrice: String }
 struct OrderSummary: Decodable {
@@ -63,7 +64,10 @@ final class HelperService {
               stored.origin == req.site.origin, stored.username == req.account.username
         else { return LoginResult(requestId: req.requestId, decision: .denied, sealed: nil) }
 
-        let decision = Approval.ask(
+        // Skipping the prompt needs both the broker's consent and this account's own unattended flag,
+        // so a compromised broker cannot release credentials the user never marked unattended.
+        let unattended = req.unattended == true && stored.unattended == true
+        let decision: Decision = unattended ? .approved : Approval.ask(
             title: "\(Approval.clean(req.agent)) wants to sign in",
             rows: [("Website", req.site.origin), ("Site", req.site.name), ("Account", stored.username),
                    ("Operation", "Sign in (password entered by AgentVault, never shown to the agent)"),

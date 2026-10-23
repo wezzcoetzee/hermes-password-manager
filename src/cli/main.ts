@@ -9,6 +9,8 @@ import { chmodSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
+import { APPROVAL_MODES, isApprovalMode } from '../shared/approval.ts'
+import { ask } from '../shared/tty.ts'
 
 const root = join(import.meta.dirname, '../..')
 const home = process.env.AGENTVAULT_HOME ?? join(homedir(), '.agentvault')
@@ -28,12 +30,15 @@ const admin = (args: string[], input?: string) => run(['docker', 'compose', 'exe
 const helper = (args: string[], input?: string, inherit = false) => run([...helperCommand, ...args], input, inherit)
 
 const argv = process.argv.slice(2)
-const twoWord = argv[0] === 'agent' || argv[0] === 'credential'
+const twoWord = argv[0] === 'agent' || argv[0] === 'credential' || argv[0] === 'chat'
 const command = argv.slice(0, twoWord ? 2 : 1).join(' ')
 const rest = argv.slice(twoWord ? 2 : 1)
 const { values, positionals } = parseArgs({
   args: rest, allowPositionals: true, strict: false,
-  options: { site: { type: 'string' }, username: { type: 'string' }, label: { type: 'string' }, transactions: { type: 'boolean' }, agent: { type: 'string' } },
+  options: {
+    site: { type: 'string' }, username: { type: 'string' }, label: { type: 'string' }, transactions: { type: 'boolean' }, agent: { type: 'string' },
+    approval: { type: 'string' }, 'chat-id': { type: 'string' },
+  },
 })
 
 const agent = typeof values.agent === 'string' ? values.agent : 'hermes'
@@ -44,6 +49,18 @@ function siteOrigin(siteId: string): string {
   const origin = sites[siteId]
   if (!origin) throw new Error(`Unknown site ${siteId}. Known: ${Object.keys(sites).join(', ')}`)
   return origin
+}
+
+/**
+ * The helper keeps its own per-account flag, so a chat or auto grant in the broker alone never
+ * releases a password without a prompt. Turning it on asks for confirmation in the helper's UI.
+ */
+function setUnattended(accountId: string, on: boolean) {
+  if (on) return helper(['unattended', '--account', accountId], undefined, true)
+  // Clearing is best effort: the credential may already be gone, and a prompt grant never asks for unattended release.
+  const [bin = '', ...args] = helperCommand
+  const result = spawnSync(bin, [...args, 'unattended', '--account', accountId, '--off'], { cwd: root, stdio: 'inherit' })
+  if (result.status !== 0) console.warn(`Could not clear the unattended flag for ${accountId} in the helper.`)
 }
 
 switch (command) {
@@ -89,20 +106,41 @@ switch (command) {
   }
   case 'grant': {
     const id = positionals[0]
-    if (!id) throw new Error('Usage: agentvault grant <account-id> [--transactions] [--agent hermes]')
-    admin(['grant', agent, id, ...(values.transactions ? ['--transactions'] : [])])
-    console.log(`Granted ${agent} access to ${id}${values.transactions ? ' (transactions allowed, each one still needs your approval)' : ''}`)
+    const approval = values.approval ?? 'prompt'
+    if (!id || !isApprovalMode(approval)) {
+      throw new Error(`Usage: agentvault grant <account-id> [--transactions] [--approval ${APPROVAL_MODES.join('|')}] [--agent hermes]`)
+    }
+    const unattended = approval !== 'prompt'
+    if (unattended) setUnattended(id, true)
+    try {
+      admin(['grant', agent, id, ...(values.transactions ? ['--transactions'] : []), '--approval', approval])
+    } catch (err) {
+      if (unattended) setUnattended(id, false)
+      throw err
+    }
+    if (values.approval === 'prompt') setUnattended(id, false)
+    const logins = { prompt: 'on this Mac', chat: 'in Telegram', auto: 'automatically, without asking' }[approval]
+    console.log(`Granted ${agent} access to ${id}; logins are approved ${logins}${values.transactions ? '. Transactions allowed, each one still needs your approval on this Mac' : ''}`)
     break
   }
   case 'revoke': {
     const id = positionals[0]
     if (!id) throw new Error('Usage: agentvault revoke <account-id> [--agent hermes]')
     admin(['revoke-grant', agent, id])
+    setUnattended(id, false)
+    break
+  }
+  case 'chat telegram': {
+    const chatId = values['chat-id']
+    if (typeof chatId !== 'string') throw new Error('Usage: agentvault chat telegram --chat-id <your numeric Telegram user id>')
+    // The token goes straight to the broker's store and is never echoed or written on the host.
+    console.log(admin(['chat-telegram', '--chat-id', chatId], await ask('AgentVault bot token (hidden): ', true)))
     break
   }
   case 'audit':
   case 'sessions':
   case 'accounts':
+  case 'grants':
     run(['docker', 'compose', 'exec', '-T', 'broker', 'node', 'src/broker/admin.ts', command, ...rest], undefined, true)
     break
   case 'status':
@@ -116,8 +154,10 @@ switch (command) {
   credential add <id> --site <site> [--username u]   enroll a credential (password typed into the native helper)
   credential rotate <id> --site <site>               replace a stored password
   credential remove <id>                             delete from Keychain and the broker
-  grant <id> [--transactions] [--agent name]         allow an agent to use an account
+  grant <id> [--transactions] [--approval mode]      allow an agent to use an account; [--agent name]
+                                                     login approval: prompt (default), chat or auto
   revoke <id> [--agent name]                         remove that permission
+  chat telegram --chat-id <id>                       set up AgentVault's own bot for chat approvals
   audit [--event e] [--limit n] [--json]             show audit events
-  sessions | accounts | status`)
+  sessions | accounts | grants | status`)
 }

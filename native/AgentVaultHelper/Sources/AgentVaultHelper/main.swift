@@ -2,6 +2,7 @@
 //   pair                                  broker public keys JSON on stdin; prints this helper's public key
 //   enroll --account <id> --origin <url> [--username <u>]
 //   delete --account <id>
+//   unattended --account <id> [--off]     allow releasing this credential without a prompt (chat/auto grants)
 //   serve [--port 47800]                  run under launchd in the user's GUI session
 import AppKit
 import Foundation
@@ -48,6 +49,20 @@ func run() throws {
         guard Approval.authenticate(reason: "delete the AgentVault credential \(account)") else { throw HelperError.usage("not authorised") }
         try Keychain.deleteCredential(account: account)
 
+    case "unattended":
+        let account = try require("account")
+        if CommandLine.arguments.contains("--off") {
+            try Keychain.setUnattended(account: account, false)
+            break
+        }
+        // This removes the human from logins for the account, so it needs the same proof of presence as pairing.
+        guard Approval.confirm(title: "Allow \(account) without a prompt?",
+                               message: "AgentVault will release this credential when the broker has your approval in chat, or for grants set to auto, without asking on this Mac.",
+                               confirmLabel: "Allow"),
+              Approval.authenticate(reason: "allow AgentVault to use \(account) without a prompt")
+        else { throw HelperError.usage("not changed") }
+        try Keychain.setUnattended(account: account, true)
+
     case "serve":
         let service = try HelperService()
         let server = try HTTPServer(port: UInt16(option("port") ?? "47800") ?? 47800, handler: service.handle)
@@ -56,7 +71,7 @@ func run() throws {
         app.run()
 
     default:
-        print("Usage: AgentVaultHelper pair | enroll --account <id> --origin <url> [--username <u>] | delete --account <id> | serve [--port <n>]")
+        print("Usage: AgentVaultHelper pair | enroll --account <id> --origin <url> [--username <u>] | delete --account <id> | unattended --account <id> [--off] | serve [--port <n>]")
     }
 }
 

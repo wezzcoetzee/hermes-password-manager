@@ -10,7 +10,7 @@ AgentVault is a local credential broker and controlled browser for Hermes. Start
 - Do not weaken allowlists, private-network checks, approval binding or single-use consumption to make a site work. Site adapters are reviewed configuration, never agent input.
 - Changes to helper cryptography must keep TypeScript and Swift byte-compatible. Read [ADR 0006](docs/adr/0006-signed-helper-protocol.md) and run the interop check when changing the protocol.
 - Do not run install/start/stop scripts, touch live credentials or databases, or restart an operator's stack without explicit authorization. Test against isolated fixtures.
-- The macOS helper has been built, paired and passed a fake-account login on a real Mac. Denial, purchase approval, Touch ID and replay rejection are still unverified there, and Linux tests do not establish them.
+- The macOS helper has been built, paired and passed a fake-account login on a real Mac. Denial, purchase approval, Touch ID, replay rejection and unattended release are still unverified there, and Linux tests do not establish them.
 
 ## Task context and verification
 

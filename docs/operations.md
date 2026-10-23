@@ -38,7 +38,32 @@ agentvault audit --event credential_access --limit 20 --json
 agentvault sessions; agentvault accounts
 ```
 
+Login approvals record `channel`: `helper` for the helper's answer, plus `chat` or `auto` for those grants (`auto` logs outcome `auto_approved`). `agentvault grants` lists each grant's transaction right and approval mode.
+
 Event names: `agent_auth`, `policy_violation`, `session_created`, `session_expired`, `session_revoked`, `credential_access`, `login_approval`, `login_result`, `browser_action`, `transaction_approval`, `transaction_execution`. Rows contain ids, outcomes and reasons, not secrets. Broker logs: `docker compose logs broker`.
+
+## Login approval modes
+
+Each grant chooses who approves its logins. Purchases always use the native prompt. See [ADR 0007](adr/0007-configurable-login-approval.md).
+
+| Mode | Command | Who approves |
+|---|---|---|
+| `prompt` (default) | `agentvault grant <id>` | Native prompt and Touch ID on the Mac |
+| `chat` | `agentvault grant <id> --approval chat` | You, by tapping Approve once in Telegram within 120s |
+| `auto` | `agentvault grant <id> --approval auto` | Nobody; the login is audited as `auto_approved` |
+
+`chat` and `auto` first ask the helper to mark the account unattended, with a native confirmation and Touch ID. Without that flag the helper still prompts. The flag belongs to the account, not the grant: `--approval prompt` or `revoke` for any agent clears it, and other agents' `chat` or `auto` grants on that account then fall back to the native prompt. Re-enrolling a credential (`credential rotate`) also clears it. On a `chat` grant without the flag, the native prompt follows the Telegram tap; rerun `agentvault grant <id> --approval chat` to set it again. A plain `grant <id>` sets the broker grant back to `prompt` but leaves the helper flag alone.
+
+### Set up Telegram approval
+
+Use a bot for AgentVault only, not the one Hermes uses. If approvals came through Hermes' bot, the agent could approve itself.
+
+1. Create a bot with @BotFather and keep its token. Do not set a webhook on it; the broker long-polls.
+2. Send the bot any message from your own account, so it can message you. Get your numeric user id, for example from @userinfobot.
+3. `agentvault chat telegram --chat-id <your id>` and paste the token at the hidden prompt. It is stored only in the broker's `settings` table.
+4. `agentvault grant <id> --approval chat`.
+
+Only taps from that user id, in its private chat with the bot, count. If the bot is not set up or Telegram is unreachable, `request_login` returns `approval_unavailable`; it does not fall back to the native prompt.
 
 ## Revoking access
 

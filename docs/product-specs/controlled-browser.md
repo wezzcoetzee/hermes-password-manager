@@ -11,7 +11,7 @@ An operator enrolls an account, configures a reviewed site adapter and grants th
 ## User flow
 
 1. The agent lists granted accounts and navigates to an allowlisted site, receiving an anonymous session id.
-2. `request_login` asks the human for consent. Approved credentials are entered by the worker; denial or unavailability leaves the session anonymous.
+2. `request_login` asks the human for consent through the grant's approval mode: the native prompt by default, a Telegram message, or no prompt for `auto` grants ([ADR 0007](../adr/0007-configurable-login-approval.md)). Approved credentials are entered by the worker; denial or unavailability leaves the session anonymous.
 3. Browser tools act through numbered refs from snapshots. Website text is untrusted data; snapshots omit input values and scrub known secrets with documented limits.
 4. At checkout, `request_transaction_approval` reads the displayed summary and asks the human. Approval lasts two minutes and covers one matching order submission.
 5. The worker rereads the summary before the action and the broker atomically consumes approval at the network boundary. Changed, expired or already-used approval blocks submission.

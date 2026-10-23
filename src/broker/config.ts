@@ -36,3 +36,6 @@ export function openBrokerState() {
 }
 
 export const HELPER_KEY_SETTING = 'helper_public_key'
+/** AgentVault's own Telegram bot for chat login approvals; never Hermes' bot. */
+export const TELEGRAM_TOKEN_SETTING = 'telegram_bot_token'
+export const TELEGRAM_CHAT_SETTING = 'telegram_chat_id'
