@@ -42,12 +42,15 @@ docker/ docker-compose.yml   broker and worker images, stack definition
 scripts/            install.sh, start.sh, stop.sh, launchd/dev.agentvault.helper.plist
 hermes/             config.example.yaml, SKILL.md (installed to ~/.hermes/skills/agentvault)
 test/               unit, e2e (real Chromium), docker smoke
+skills/setup/       agent-guided install skill
 docs/               architecture, ADRs, research, threat model, limitations, operations
 ```
 
 ## Quick start (macOS)
 
 Prerequisites: Docker Desktop, Node 24, Xcode Command Line Tools (Swift 5.9+), Hermes Desktop.
+
+To have an agent walk you through it, point it at [skills/setup/SKILL.md](skills/setup/SKILL.md).
 
 ```bash
 scripts/install.sh                           # builds the helper, starts the stack, pairs keys, creates the agent token
