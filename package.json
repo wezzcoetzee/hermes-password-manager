@@ -16,7 +16,8 @@
     "test": "vitest run",
     "test:e2e": "vitest run test/e2e",
     "mcp": "node src/mcp-adapter/main.ts",
-    "mock-shop": "node mock-shop/server.ts"
+    "mock-shop": "node mock-shop/server.ts",
+    "test:docker": "node test/docker/smoke.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",

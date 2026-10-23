@@ -71,6 +71,9 @@ switch (command) {
     console.log('Helper key pinned')
     break
   }
+  case 'sites':
+    console.log(JSON.stringify(Object.fromEntries([...sites.values()].map((site) => [site.id, site.origin]))))
+    break
   case 'accounts':
     console.table(db.prepare('SELECT id, site_id, label, max_session_minutes FROM accounts').all())
     break
@@ -87,6 +90,6 @@ switch (command) {
   default:
     console.log(`Commands: agent-add <name> | agent-disable <name> | account-add <id> --site --username [--label] [--max-minutes]
           account-remove <id> | grant <agent> <account> [--transactions] | revoke-grant <agent> <account>
-          pubkeys | pair-helper (PEM on stdin) | accounts | sessions | audit [--event] [--limit] [--json]`)
+          pubkeys | pair-helper (PEM on stdin) | sites | accounts | sessions | audit [--event] [--limit] [--json]`)
 }
 db.close()
