@@ -152,6 +152,8 @@ Only the interop script touches Swift code; the AppKit, Keychain and LocalAuthen
 
 ## Docs
 
+- [Agent guidance](AGENTS.md) and [documentation map](docs/index.md)
+
 - [Architecture](docs/architecture.md)
 - [Threat model](docs/threat-model.md)
 - [Security limitations](docs/security-limitations.md)
