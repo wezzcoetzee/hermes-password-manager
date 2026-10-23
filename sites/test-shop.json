@@ -1,0 +1,30 @@
+{
+  "id": "test-shop",
+  "name": "AgentVault Test Shop",
+  "origin": "http://mock-shop:4000",
+  "allowPrivateNetwork": true,
+  "screenshots": true,
+  "login": {
+    "url": "http://mock-shop:4000/login",
+    "username": "#email",
+    "password": "#password",
+    "submit": "button[type=submit]",
+    "successPath": "^/account$|^/basket$|^/product/"
+  },
+  "checkout": {
+    "pagePath": "^/checkout$",
+    "submitPath": "^/checkout/place-order$",
+    "summary": {
+      "item": "[data-order-item]",
+      "name": "[data-name]",
+      "variant": "[data-variant]",
+      "quantity": "[data-quantity]",
+      "unitPrice": "[data-unit-price]",
+      "shipping": "[data-shipping]",
+      "total": "[data-total]",
+      "currency": "[data-currency]",
+      "address": "[data-address]",
+      "paymentMethod": "[data-payment]"
+    }
+  }
+}
