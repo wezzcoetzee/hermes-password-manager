@@ -22,4 +22,4 @@ Use this map to find task context without loading every document. Existing archi
 
 There is no browser-based product frontend, so separate frontend and visual design-system documents are not scaffolded. The native prompt behavior is covered by product flows and the security docs. No approved future roadmap or active implementation plan is recorded here; do not infer commitments from validation gaps.
 
-The SQL schema remains in `migrations/001_init.sql`; `src/broker/db.ts` adds migration bookkeeping. No live database was inspected to produce these docs. Library reference dumps are omitted: package versions and APIs should be checked against the relevant source and lockfile when needed.
+The SQL schema lives in `migrations/` (`001_init.sql`, then numbered changes); `src/broker/db.ts` adds migration bookkeeping. No live database was inspected to produce these docs. Library reference dumps are omitted: package versions and APIs should be checked against the relevant source and lockfile when needed.

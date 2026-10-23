@@ -7,6 +7,8 @@ import Security
 struct StoredCredential: Codable {
     let origin: String
     let username: String
+    /// Release without a prompt when the broker already has chat or auto consent. Absent on older items, which means no.
+    var unattended: Bool?
 }
 
 enum Keychain {
@@ -65,6 +67,15 @@ enum Keychain {
         guard let item = try read(service: credentialService, account: account, attributesOnly: true),
               let data = item[kSecAttrGeneric as String] as? Data else { return nil }
         return try? JSONDecoder().decode(StoredCredential.self, from: data)
+    }
+
+    /// Rewrites only the metadata; the password is not read. Re-enrolling clears the flag.
+    static func setUnattended(account: String, _ enabled: Bool) throws {
+        guard var stored = try credentialMetadata(account: account) else { throw HelperError.usage("no credential enrolled for \(account)") }
+        stored.unattended = enabled
+        let attributes = [kSecAttrGeneric as String: try JSONEncoder().encode(stored)]
+        let status = SecItemUpdate(base(service: credentialService, account: account) as CFDictionary, attributes as CFDictionary)
+        guard status == errSecSuccess else { throw HelperError.keychain(status) }
     }
 
     static func password(account: String) throws -> Data? {

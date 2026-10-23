@@ -5,10 +5,12 @@
 import { HttpError } from '../shared/http.ts'
 import { opaqueId } from '../shared/ids.ts'
 import { siteOrigins, type Site } from '../shared/sites.ts'
+import type { Decision, LoginRequest } from '../shared/helper-protocol.ts'
 import type { ToolInput, ToolName } from '../shared/tools.ts'
 import type { WorkerAction } from '../shared/worker-protocol.ts'
 import type { Audit } from './audit.ts'
 import type { AccountRow, AgentRow, ApprovalRow, Db, GrantRow, SessionRow } from './db.ts'
+import type { ChatApprover } from './chat-approver.ts'
 import type { HelperClient } from './helper-client.ts'
 import type { WorkerClient } from './worker-client.ts'
 
@@ -16,15 +18,15 @@ export const ANONYMOUS_SESSION_MINUTES = 30
 export const TRANSACTION_APPROVAL_TTL_MS = 120_000
 const LIVE_STATES = new Set(['anonymous', 'authenticated'])
 
-export interface BrokerDeps { db: Db; sites: Map<string, Site>; helper: HelperClient; worker: WorkerClient; audit: Audit; now?: () => number }
+export interface BrokerDeps { db: Db; sites: Map<string, Site>; helper: HelperClient; chat: ChatApprover; worker: WorkerClient; audit: Audit; now?: () => number }
 
 function maskUsername(username: string) {
   const [local = '', domain] = username.split('@')
   return `${local.slice(0, 1)}***${domain ? `@${domain}` : ''}`
 }
 
-export function createBroker({ db, sites, helper, worker, audit, now = Date.now }: BrokerDeps) {
-  /** One native prompt per session at a time, so an agent cannot flood the user with approvals. */
+export function createBroker({ db, sites, helper, chat, worker, audit, now = Date.now }: BrokerDeps) {
+  /** One approval prompt (native or chat) per session at a time, so an agent cannot flood the user with approvals. */
   const prompting = new Set<string>()
   async function withPrompt<T>(sessionId: string, fn: () => Promise<T>): Promise<T> {
     if (prompting.has(sessionId)) throw new HttpError(409, 'approval_pending', 'An approval for this session is already waiting for the user')
@@ -47,13 +49,9 @@ export function createBroker({ db, sites, helper, worker, audit, now = Date.now 
     return site
   }
 
-  const grantsFor = (agent: AgentRow) => db.prepare(
-    'SELECT a.id, a.site_id, a.username, a.label, a.max_session_minutes, g.allow_transactions FROM grants g JOIN accounts a ON a.id = g.account_id WHERE g.agent_id = ?',
-  ).all(agent.id) as unknown as (AccountRow & GrantRow)[]
-
-  const grant = (agent: AgentRow, accountId: string) => db.prepare(
-    'SELECT a.id, a.site_id, a.username, a.label, a.max_session_minutes, g.allow_transactions FROM grants g JOIN accounts a ON a.id = g.account_id WHERE g.agent_id = ? AND a.id = ?',
-  ).get(agent.id, accountId) as (AccountRow & GrantRow) | undefined
+  const GRANT_SELECT = 'SELECT a.id, a.site_id, a.username, a.label, a.max_session_minutes, g.allow_transactions, g.approval FROM grants g JOIN accounts a ON a.id = g.account_id WHERE g.agent_id = ?'
+  const grantsFor = (agent: AgentRow) => db.prepare(GRANT_SELECT).all(agent.id) as unknown as (AccountRow & GrantRow)[]
+  const grant = (agent: AgentRow, accountId: string) => db.prepare(`${GRANT_SELECT} AND a.id = ?`).get(agent.id, accountId) as (AccountRow & GrantRow) | undefined
 
   /** Loads a session the agent owns and that is still live. Cross-agent ids look identical to unknown ids. */
   function liveSession(agent: AgentRow, sessionId: string): SessionRow {
@@ -98,15 +96,26 @@ export function createBroker({ db, sites, helper, worker, audit, now = Date.now 
     if (session.state !== 'anonymous') throw new HttpError(409, 'already_authenticated', 'Session is already signed in; open a new session for another account')
     const site = siteFor(session.site_id)
     const minutes = Math.min(durationMinutes, account.max_session_minutes)
+    const { approval } = account
     const requestId = opaqueId('req')
-
-    audit({ event: 'credential_access', outcome: 'requested', agentId: agent.id, sessionId, accountId, detail: { requestId, minutes } })
-    const { decision, credential } = await helper.approveLogin({
+    const request: LoginRequest = {
       requestId, agent: agent.name, site: { name: site.name, origin: site.origin },
-      account: { id: account.id, username: account.username }, durationMinutes: minutes,
-    })
-    audit({ event: 'login_approval', outcome: decision, agentId: agent.id, sessionId, accountId, detail: { requestId } })
-    if (decision !== 'approved' || !credential) return { status: decision === 'unavailable' ? 'approval_unavailable' : 'denied' }
+      account: { id: account.id, username: account.username }, durationMinutes: minutes, unattended: approval !== 'prompt',
+    }
+    const entry = { agentId: agent.id, sessionId, accountId }
+    const refused = (decision: Decision) => ({ status: decision === 'unavailable' ? 'approval_unavailable' : 'denied' })
+
+    audit({ event: 'credential_access', outcome: 'requested', ...entry, detail: { requestId, minutes, approval } })
+    // Chat and auto grants are decided here, and the helper then releases without its own prompt,
+    // but only for accounts the operator also marked unattended on the helper.
+    if (approval !== 'prompt') {
+      const consent = approval === 'auto' ? 'auto_approved' : await chat.approveLogin(request)
+      audit({ event: 'login_approval', outcome: consent, ...entry, detail: { requestId, channel: approval } })
+      if (consent === 'denied' || consent === 'unavailable') return refused(consent)
+    }
+    const { decision, credential } = await helper.approveLogin(request)
+    audit({ event: 'login_approval', outcome: decision, ...entry, detail: { requestId, channel: 'helper' } })
+    if (decision !== 'approved' || !credential) return refused(decision)
 
     const { ok } = await worker.login(sessionId, credential.username, credential.password)
     audit({ event: 'login_result', outcome: ok ? 'authenticated' : 'failed', agentId: agent.id, sessionId, accountId })
@@ -165,6 +174,7 @@ export function createBroker({ db, sites, helper, worker, audit, now = Date.now 
     },
 
     request_login: (agent, input) => withPrompt(input.sessionId, () => requestLogin(agent, input)),
+    // Purchases always go to the native prompt, whatever the grant's login approval mode.
     request_transaction_approval: (agent, input) => withPrompt(input.sessionId, () => requestTransactionApproval(agent, input)),
 
 

@@ -5,7 +5,7 @@
 | Component | Runs | Responsibility | Holds |
 |---|---|---|---|
 | MCP adapter (`src/mcp-adapter`) | Host, spawned by Hermes over stdio | Validates tool input (zod), forwards to broker with the agent bearer token, 180s timeout for approval tools, 60s otherwise | Agent token (read from `AGENTVAULT_TOKEN_FILE`) |
-| credential-broker (`src/broker`) | Docker, published `127.0.0.1:7800` | AuthN of agents, grants, session state, approvals, audit, all policy decisions. Internal API on `:7801` for the worker | SQLite DB, broker keypairs (volume `broker-data`), worker token (docker secret) |
+| credential-broker (`src/broker`) | Docker, published `127.0.0.1:7800` | AuthN of agents, grants, session state, approvals, audit, all policy decisions. Internal API on `:7801` for the worker. Optional Telegram long poll for chat login approvals | SQLite DB, broker keypairs (volume `broker-data`), worker token (docker secret), Telegram bot token (`settings`) |
 | browser-worker (`src/browser-worker`) | Docker, no published port | Playwright Chromium contexts, one per session; network guard; types the password; reads order summary; scrubs output | Session cookies and the password transiently, in memory |
 | Native helper (`native/AgentVaultHelper`) | Host, LaunchAgent in the GUI session | Keychain storage, native prompts, Touch ID, signs responses, seals credentials | Passwords (Keychain), helper keypair, pinned broker keys |
 | Dev helper (`src/dev-helper`) | Linux dev/CI | Same protocol as the Swift helper, plaintext store, TTY prompt | Plaintext credentials (fake only) |
@@ -36,6 +36,7 @@ flowchart TB
   BR -- "T3 signed + pinned keys" --> HP
   HP --> KC
   WK -- "T4 allowlist guard" --> WEB
+  BR -- "T5 bot token, owner-only taps" --> TG[Telegram, chat grants only]
 ```
 
 | Boundary | Control |
@@ -44,20 +45,21 @@ flowchart TB
 | T2 broker to worker | Shared token (`x-av-worker-token`, constant-time compare), `core` network is `internal: true` |
 | T3 broker to helper | ECDSA-signed requests and responses, pinned keys both ways, sealed credentials, human approval |
 | T4 worker to internet | Per-session origin allowlist, private-address block, redirect vetting, transaction boundary |
+| T5 broker to Telegram | Outbound long poll with AgentVault's own bot token; a tap counts only from the configured user's private chat, for a pending request id, within 120s ([ADR 0007](adr/0007-configurable-login-approval.md)) |
 
 ## Data stored
 
-SQLite at `/data/agentvault.db` (WAL), schema in `migrations/001_init.sql`.
+SQLite at `/data/agentvault.db` (WAL), schema in `migrations/` (applied in order by `src/broker/db.ts`).
 
 | Table | Contents |
 |---|---|
 | `agents` | name, `token_hash` (sha256), disabled |
 | `accounts` | id (also the Keychain account key), site id, username (plaintext), label, max session minutes |
-| `grants` | agent x account, `allow_transactions` |
+| `grants` | agent x account, `allow_transactions`, `approval` (`prompt`, `chat` or `auto`) |
 | `sessions` | id, agent, site, account, state, created/expires |
 | `transaction_approvals` | session, `summary_hash`, merchant, total, currency, status, expiry |
 | `audit_events` | ts, event, outcome, ids, JSON detail |
-| `settings` | pinned helper public key |
+| `settings` | pinned helper public key; Telegram bot token and owner chat id when chat approval is set up |
 
 Also in `broker-data`: `keys/identity.json` (broker signing and sealing private keys, mode 0600).
 
@@ -85,7 +87,7 @@ sequenceDiagram
   U-->>N: approve
   N->>N: read Keychain, seal to broker sealing key
   N-->>B: signed response bound to nonce, sealed credential
-  B->>B: verify signature, requestId; unseal
+  B->>B: verify signature and requestId, then unseal
   B->>W: login(username, password)
   W->>W: goto login.url, check origin, fill, submit, wait for successPath
   W-->>B: ok
@@ -94,6 +96,29 @@ sequenceDiagram
 ```
 
 Denied or `unavailable` (no GUI, locked, timeout) answers return `denied` or `approval_unavailable`, and the session stays anonymous. A bad signature or mismatched request id raises an error and counts as denied.
+
+### Login approval modes
+
+The sequence above is the default `prompt` grant. A grant can instead be `chat` or `auto` ([ADR 0007](adr/0007-configurable-login-approval.md)). The broker then decides consent itself and asks the helper with `unattended: true`. The helper skips its prompt only if the account also has its own `unattended` flag; otherwise it prompts as above.
+
+```mermaid
+sequenceDiagram
+  participant B as Broker
+  participant T as Telegram (AgentVault bot)
+  participant U as User
+  participant N as Native helper
+  B->>T: sendMessage(agent, site, account id, request id) with Approve / Deny
+  loop until a decision or 120s
+    B->>T: getUpdates (long poll)
+  end
+  U->>T: tap Approve once
+  T-->>B: callback_query from the owner's private chat, request id
+  B->>N: signed POST /v1/login, unattended: true
+  N->>N: account marked unattended? release without prompt
+  N-->>B: signed response, sealed credential
+```
+
+`auto` grants skip the Telegram step and audit `login_approval` `auto_approved`. Each login writes a `login_approval` row with `channel` `chat` or `auto` for the broker's decision, then one with `channel` `helper` for the helper's answer. Taps from anyone else, for unknown request ids or after a decision are answered "no longer pending" and ignored. Transaction approval never uses these modes.
 
 ## Purchase flow
 
@@ -155,7 +180,7 @@ Expiry is enforced three ways: on each access (`liveSession`), by a 15s sweeper 
 
 Transport: HTTP POST to `host.docker.internal:47800`, paths `/v1/login` and `/v1/transaction`. Shared definitions: `src/shared/helper-protocol.ts`, `src/shared/crypto.ts` (mirrored by `native/AgentVaultHelper/Sources/Crypto.swift`; change both together).
 
-**Request.** Headers `x-av-ts`, `x-av-nonce`, `x-av-signature`. Signature is ECDSA P-256 / SHA-256 (raw `r||s`, base64) by the broker signing key over:
+**Request.** Body is `LoginRequest` or `TransactionRequest` from `src/shared/helper-protocol.ts`; `LoginRequest.unattended` asks the helper to release without its prompt, which it honours only for accounts it has marked unattended. Headers `x-av-ts`, `x-av-nonce`, `x-av-signature`. Signature is ECDSA P-256 / SHA-256 (raw `r||s`, base64) by the broker signing key over:
 
 ```
 POST\n<path>\n<ts>\n<nonce>\n<sha256 hex of body>
@@ -179,7 +204,7 @@ Approval timeout: 120s (`APPROVAL_TIMEOUT_MS`); the broker's HTTP timeout is 130
 
 ## Broker to worker
 
-Plain HTTP on the `core` network (`internal: true`). Every call carries `x-av-worker-token`, a secret read from the docker secret `worker_token` (`./secrets/worker_token`) in both containers. The worker exposes `/sessions/{open,login,extend,action,close,close-all}`; the broker exposes only `/internal/transactions/consume` to it. Max 8 concurrent sessions. The worker is on `egress` for outbound web; the broker is on `host-link` for the helper and the published port. Containers run read-only, `cap_drop: ALL`, `no-new-privileges`, with CPU and memory limits.
+Plain HTTP on the `core` network (`internal: true`). Every call carries `x-av-worker-token`, a secret read from the docker secret `worker_token` (`./secrets/worker_token`) in both containers. The worker exposes `/sessions/{open,login,extend,action,close,close-all}`; the broker exposes only `/internal/transactions/consume` to it. Max 8 concurrent sessions. The worker is on `egress` for outbound web; the broker is on `host-link` for the helper, the published port and, when chat approval is configured, `api.telegram.org`. Containers run read-only, `cap_drop: ALL`, `no-new-privileges`, with CPU and memory limits.
 
 ## Browser session controls
 

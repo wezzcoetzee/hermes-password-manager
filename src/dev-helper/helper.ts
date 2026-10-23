@@ -16,10 +16,13 @@ export type Prompt =
   | { kind: 'login'; request: LoginRequest }
   | { kind: 'transaction'; request: TransactionRequest }
 
+/** `unattended` mirrors the Swift helper's per-account flag: release without a prompt when the broker already has consent. */
+export type StoredCredential = Credential & { origin: string; unattended?: boolean }
+
 export interface DevHelperOptions {
   brokerSigningKey: string
   brokerSealingKey: string
-  credentials: Map<string, Credential & { origin: string }>
+  credentials: Map<string, StoredCredential>
   decide: (prompt: Prompt) => Promise<Decision>
   key?: KeyPairPem
 }
@@ -57,8 +60,9 @@ export function createDevHelper(options: DevHelperOptions): { server: Server; pu
       if (!stored || stored.origin !== request.site.origin || stored.username !== request.account.username) {
         return respond(nonce, { requestId: request.requestId, decision: 'denied' })
       }
-      prompts.push({ kind: 'login', request })
-      const decision = await options.decide({ kind: 'login', request })
+      const unattended = request.unattended && stored.unattended === true
+      if (!unattended) prompts.push({ kind: 'login', request })
+      const decision = unattended ? 'approved' : await options.decide({ kind: 'login', request })
       if (decision !== 'approved') return respond(nonce, { requestId: request.requestId, decision })
       const sealed = seal(options.brokerSealingKey, request.requestId, JSON.stringify({ username: stored.username, password: stored.password }))
       return respond(nonce, { requestId: request.requestId, decision, sealed })

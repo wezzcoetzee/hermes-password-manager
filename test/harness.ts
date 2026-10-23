@@ -6,16 +6,17 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { pino } from 'pino'
 import { createBrokerApp } from '../src/broker/app.ts'
-import { HELPER_KEY_SETTING, loadOrCreateIdentity } from '../src/broker/config.ts'
+import { HELPER_KEY_SETTING, TELEGRAM_CHAT_SETTING, TELEGRAM_TOKEN_SETTING, loadOrCreateIdentity } from '../src/broker/config.ts'
 import { openDb, setSetting } from '../src/broker/db.ts'
 import { createWorker } from '../src/browser-worker/worker.ts'
-import { createDevHelper, type Prompt } from '../src/dev-helper/helper.ts'
+import { createDevHelper, type Prompt, type StoredCredential } from '../src/dev-helper/helper.ts'
 import type { Decision } from '../src/shared/helper-protocol.ts'
 import { listen } from '../src/shared/http.ts'
 import { sha256 } from '../src/shared/ids.ts'
 import { siteSchema, type Site } from '../src/shared/sites.ts'
 import { createMcpServer } from '../src/mcp-adapter/adapter.ts'
 import { TEST_USER, createShop } from '../mock-shop/shop.ts'
+import { OWNER_CHAT_ID, TELEGRAM_TOKEN, startFakeTelegram } from './fake-telegram.ts'
 
 export const AGENT_TOKEN = 'test-agent-token-' + 'x'.repeat(20)
 export const OTHER_AGENT_TOKEN = 'other-agent-token-' + 'y'.repeat(20)
@@ -42,22 +43,26 @@ export async function startSystem() {
   const identity = loadOrCreateIdentity(join(dir, 'identity.json'))
 
   const decisions: Decision[] = []
+  const credentials = new Map<string, StoredCredential>([
+    ['test-shop-main', { username: TEST_USER.email, password: TEST_USER.password, origin }],
+    ['manual-shop-main', { username: TEST_USER.email, password: TEST_USER.password, origin: manualOrigin }],
+  ])
   const helper = createDevHelper({
     brokerSigningKey: identity.signing.publicKey,
     brokerSealingKey: identity.sealing.publicKey,
-    credentials: new Map([
-      ['test-shop-main', { username: TEST_USER.email, password: TEST_USER.password, origin }],
-      ['manual-shop-main', { username: TEST_USER.email, password: TEST_USER.password, origin: manualOrigin }],
-    ]),
+    credentials,
     decide: async (_prompt: Prompt) => decisions.shift() ?? 'denied',
   })
   const helperPort = await listen(helper.server, 0, '127.0.0.1')
   setSetting(db, HELPER_KEY_SETTING, helper.publicKey)
+  const telegram = await startFakeTelegram()
+  setSetting(db, TELEGRAM_TOKEN_SETTING, TELEGRAM_TOKEN)
+  setSetting(db, TELEGRAM_CHAT_SETTING, OWNER_CHAT_ID)
 
   const workerOptions = { token: WORKER_TOKEN, brokerInternalUrl: '', log, maxSessions: 64 }
   const worker = await createWorker(workerOptions)
   const workerPort = await listen(worker.server, 0, '127.0.0.1')
-  const app = createBrokerApp({ db, identity, sites, log, helperUrl: `http://127.0.0.1:${helperPort}`, workerUrl: `http://127.0.0.1:${workerPort}`, workerToken: WORKER_TOKEN })
+  const app = createBrokerApp({ db, identity, sites, log, helperUrl: `http://127.0.0.1:${helperPort}`, workerUrl: `http://127.0.0.1:${workerPort}`, workerToken: WORKER_TOKEN, telegramApiUrl: telegram.url })
   workerOptions.brokerInternalUrl = `http://127.0.0.1:${await listen(app.internalServer, 0, '127.0.0.1')}`
   const brokerPort = await listen(app.agentServer, 0, '127.0.0.1')
 
@@ -81,13 +86,14 @@ export async function startSystem() {
   }
 
   return {
-    origin, manualOrigin, shop, db, app, helper, decisions, brokerUrl, logLines, connect,
+    origin, manualOrigin, shop, db, app, helper, credentials, decisions, telegram, brokerUrl, logLines, connect,
     async stop() {
       await worker.shutdown()
       app.stop()
       app.agentServer.close()
       app.internalServer.close()
       helper.server.close()
+      telegram.server.close()
       shop.server.close()
     },
   }

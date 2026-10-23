@@ -6,6 +6,7 @@ import { HELPER_KEY_SETTING } from '../../src/broker/config.ts'
 import { setSetting } from '../../src/broker/db.ts'
 import { generateKeyPair } from '../../src/shared/crypto.ts'
 import { postJson } from '../../src/shared/http.ts'
+import { TELEGRAM_TOKEN, waitFor } from '../fake-telegram.ts'
 import { OTHER_AGENT_TOKEN, call, ref, startSystem, type System } from '../harness.ts'
 
 let sys: System
@@ -252,6 +253,7 @@ describe('audit', () => {
     expect(events).toEqual(expect.arrayContaining(['agent_auth', 'session_created', 'credential_access', 'login_approval', 'browser_action', 'policy_violation', 'transaction_approval', 'transaction_execution', 'session_revoked']))
     const dump = JSON.stringify(sys.db.prepare('SELECT * FROM audit_events').all()) + sys.logLines.join('')
     expect(dump).not.toContain(TEST_USER.password)
+    expect(dump).not.toContain(TELEGRAM_TOKEN)
     expect(dump).not.toContain('1 Test Street')
     expect(dump).not.toMatch(/sid=[0-9a-f]{20,}/)
   })
@@ -264,5 +266,93 @@ describe('approval prompts', () => {
     const results = await Promise.all([0, 1].map(() => call(hermes, 'request_login', { sessionId: data.sessionId, accountId: 'test-shop-main' })))
     expect(results.filter((r) => r.error?.startsWith('approval_pending'))).toHaveLength(1)
     sys.decisions.length = 0
+  })
+})
+
+describe('login approval modes', () => {
+  /** Sets the grant's approval mode and the helper's own unattended flag, restoring both afterwards. */
+  async function withApproval(approval: 'chat' | 'auto', unattended: boolean, fn: () => Promise<void>) {
+    const grant = sys.db.prepare("UPDATE grants SET approval = ? WHERE agent_id = 'agt_hermes' AND account_id = 'test-shop-main'")
+    const stored = sys.credentials.get('test-shop-main')
+    if (!stored) throw new Error('missing fixture credential')
+    grant.run(approval)
+    stored.unattended = unattended
+    try {
+      await fn()
+    } finally {
+      grant.run('prompt')
+      stored.unattended = undefined
+      sys.decisions.length = 0
+    }
+  }
+
+  const anonymousSession = async () => (await call(hermes, 'browser_navigate', { url: `${sys.origin}/` })).data.sessionId as string
+  const login = async (sessionId: string) => (await call(hermes, 'request_login', { sessionId, accountId: 'test-shop-main' })).data
+  const lastLoginApproval = () => sys.db.prepare("SELECT outcome, detail FROM audit_events WHERE event = 'login_approval' AND json_extract(detail, '$.channel') != 'helper' ORDER BY id DESC LIMIT 1").get()
+
+  it('auto grants skip the prompt only for accounts the helper also marked unattended', async () => {
+    await withApproval('auto', false, async () => {
+      const prompts = sys.helper.prompts.length
+      sys.decisions.push('denied')
+      expect((await login(await anonymousSession())).status).toBe('denied')
+      expect(sys.helper.prompts.length).toBe(prompts + 1) // a compromised broker alone cannot skip the prompt
+    })
+    await withApproval('auto', true, async () => {
+      const prompts = sys.helper.prompts.length
+      expect((await login(await anonymousSession())).status).toBe('authenticated')
+      expect(sys.helper.prompts.length).toBe(prompts)
+      expect(lastLoginApproval()).toMatchObject({ outcome: 'auto_approved' })
+    })
+  })
+
+  it('auto grants never auto-approve purchases', async () => {
+    await withApproval('auto', true, async () => {
+      const sessionId = await anonymousSession()
+      expect((await login(sessionId)).status).toBe('authenticated')
+      await toCheckout(sessionId)
+      sys.decisions.push('denied')
+      expect((await call(hermes, 'request_transaction_approval', { sessionId })).data.status).toBe('denied')
+      expect(sys.helper.prompts.at(-1)?.kind).toBe('transaction')
+    })
+  })
+
+  it('chat approval counts only a tap from the configured user and then releases without a native prompt', async () => {
+    await withApproval('chat', true, async () => {
+      const { telegram } = sys
+      const [sent, answered, prompts] = [telegram.sent.length, telegram.answers.length, sys.helper.prompts.length]
+      const pending = login(await anonymousSession())
+      await waitFor(() => telegram.sent.length > sent)
+      expect(telegram.sent.at(-1)?.text).toContain('Account: test-shop-main')
+      expect(telegram.sent.at(-1)?.text).not.toContain(TEST_USER.email)
+
+      telegram.tap('approve', '999') // someone else, or a group the bot was added to
+      await waitFor(() => telegram.answers.length > answered)
+      expect(telegram.answers.at(-1)).toBe('This request is no longer pending')
+
+      telegram.tap('approve')
+      expect((await pending).status).toBe('authenticated')
+      expect(sys.helper.prompts.length).toBe(prompts)
+      expect(lastLoginApproval()).toMatchObject({ outcome: 'approved', detail: expect.stringContaining('"channel":"chat"') })
+    })
+  })
+
+  it('a chat denial, or no configured bot, leaves the session signed out', async () => {
+    await withApproval('chat', true, async () => {
+      const sessionId = await anonymousSession()
+      const sent = sys.telegram.sent.length
+      const pending = login(sessionId)
+      await waitFor(() => sys.telegram.sent.length > sent)
+      sys.telegram.tap('deny')
+      expect((await pending).status).toBe('denied')
+
+      const token = sys.db.prepare("SELECT value FROM settings WHERE key = 'telegram_bot_token'").get()
+      sys.db.prepare("DELETE FROM settings WHERE key = 'telegram_bot_token'").run()
+      try {
+        expect((await login(sessionId)).status).toBe('approval_unavailable')
+      } finally {
+        sys.db.prepare("INSERT INTO settings (key, value) VALUES ('telegram_bot_token', ?)").run(String(token?.value))
+      }
+      expect((await call(hermes, 'get_session_status', { sessionId })).data.state).toBe('anonymous')
+    })
   })
 })

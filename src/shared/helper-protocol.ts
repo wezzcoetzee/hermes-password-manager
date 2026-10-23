@@ -11,6 +11,11 @@ export const loginRequestSchema = z.object({
   site: z.object({ name: z.string(), origin: z.string() }),
   account: z.object({ id: z.string(), username: z.string() }),
   durationMinutes: z.number().int(),
+  /**
+   * The broker already has consent (chat or auto grant). The helper skips its prompt only if the
+   * account was also marked unattended on the helper itself; otherwise it prompts as usual.
+   */
+  unattended: z.boolean().default(false),
 })
 export type LoginRequest = z.infer<typeof loginRequestSchema>
 
