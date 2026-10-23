@@ -16,4 +16,4 @@ Keep origins, login selectors and checkout boundaries in reviewed adapters. Pref
 
 ## Minimize machinery and claims
 
-Use built-in SQLite and direct Node TypeScript execution as recorded in [ADR 0005](../adr/0005-sqlite-node-builtin-and-no-build-step.md). Describe tested behavior precisely; do not present the unverified native service or real-site support as established.
+Use built-in SQLite and direct Node TypeScript execution as recorded in [ADR 0005](../adr/0005-sqlite-node-builtin-and-no-build-step.md). Describe tested behavior precisely; do not present the partly verified native service or real-site support as established.

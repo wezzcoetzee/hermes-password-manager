@@ -17,6 +17,6 @@ Use Node >=24 and install dependencies with pnpm. Chromium is required for e2e t
 
 ## Evidence boundaries
 
-No coverage percentage, performance budget or availability target is configured. Passing Node tests does not verify macOS Keychain, Touch ID, prompts, the native server or installation. Crypto interop verifies only cryptographic compatibility. Real merchant workflows remain untested according to the [limitations](security-limitations.md).
+No coverage percentage, performance budget or availability target is configured. Passing Node tests does not verify the native helper; it has been checked by hand on macOS only for build, pairing and a fake-account login. Crypto interop verifies only cryptographic compatibility. Real merchant workflows remain untested according to the [limitations](security-limitations.md).
 
 Update documentation alongside behavior, preserve the [design decisions](design-docs/index.md), and report exactly which checks ran. Track remaining validation in [plans](PLANS.md).

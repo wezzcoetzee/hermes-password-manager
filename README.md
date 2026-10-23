@@ -2,7 +2,7 @@
 
 Self-hosted credential broker and controlled browser for the Hermes AI agent. Hermes asks to sign in to a site; you approve in a native macOS prompt (with Touch ID); a sandboxed browser types the password so the agent never sees it. Purchases are blocked at the network layer until you approve the exact order.
 
-**Status: MVP.** The Swift helper in `native/AgentVaultHelper/` was written on a Linux host with no macOS access. Its protocol crypto (`Crypto.swift`) is compiled and verified against the broker by `scripts/verify-crypto-interop.sh` (swift-crypto in Docker). **The macOS-only parts (Keychain, prompts, Touch ID, loopback server, installer) have not been compiled or run.** Everything else (broker, browser worker, MCP adapter, dev helper) is covered by tests against a Node dev helper that implements the same protocol. Treat the macOS path as unverified until you have built it and run the pairing and prompt flows by hand. See [docs/security-limitations.md](docs/security-limitations.md).
+**Status: MVP.** The Swift helper in `native/AgentVaultHelper/` has been built on macOS, paired with the broker and used for a fake-account login (Keychain storage, approval prompt and loopback server). Its protocol crypto (`Crypto.swift`) is also verified against the broker by `scripts/verify-crypto-interop.sh`. Denial, purchase approval, Touch ID and replay rejection have not been exercised by hand yet. Everything else (broker, browser worker, MCP adapter, dev helper) is covered by tests against a Node dev helper that implements the same protocol. See [docs/security-limitations.md](docs/security-limitations.md).
 
 ## Architecture
 
@@ -55,7 +55,7 @@ agentvault credential add lululemon --site <site>   # password is typed into the
 agentvault grant lululemon                   # add --transactions to allow purchase approval requests
 ```
 
-`<site>` is the `id` of a file in `sites/`. Only `test-shop` ships; add real sites per [docs/operations.md](docs/operations.md#adding-a-site-adapter). The installer registers the MCP server with `hermes mcp add` (or prints the config below if the `hermes` CLI is missing) and installs the Hermes skill. Note the install script and Swift build are untested on a real Mac.
+`<site>` is the `id` of a file in `sites/`. Only `test-shop` ships; add real sites per [docs/operations.md](docs/operations.md#adding-a-site-adapter). The installer registers the MCP server with `hermes mcp add` (or prints the config below if the `hermes` CLI is missing) and installs the Hermes skill.
 
 ## Quick start (Linux dev)
 

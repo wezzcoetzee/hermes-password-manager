@@ -40,4 +40,4 @@ These points come from Apple platform knowledge and were **not re-verified again
 | launchd LaunchAgent | Used for the helper; needs a GUI session for prompts |
 | Docker Desktop VM | Containers run in a Linux VM; isolation is VM plus namespaces |
 
-Whether each is wired into the Swift helper is unverified; the helper has not been built.
+Whether each is wired into the Swift helper is unverified; the helper has been built and used for a login, but these settings were not checked.

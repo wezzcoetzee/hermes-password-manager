@@ -161,7 +161,7 @@ Transport: HTTP POST to `host.docker.internal:47800`, paths `/v1/login` and `/v1
 POST\n<path>\n<ts>\n<nonce>\n<sha256 hex of body>
 ```
 
-The helper verifies against the pinned broker key and rejects timestamps more than 30s from its clock (`MAX_CLOCK_SKEW_MS`) and reused nonces. It also refuses a login unless the account id, username and origin match what it enrolled, so the broker cannot ask for a credential to be released for a different site. This is what `src/dev-helper/helper.ts` implements; the Swift helper is meant to match but is unverified.
+The helper verifies against the pinned broker key and rejects timestamps more than 30s from its clock (`MAX_CLOCK_SKEW_MS`) and reused nonces. It also refuses a login unless the account id, username and origin match what it enrolled, so the broker cannot ask for a credential to be released for a different site. This is what `src/dev-helper/helper.ts` implements; the Swift helper matches it for pairing and a fake-account login on macOS; replay rejection has not been exercised by hand.
 
 **Response.** `{ payload, signature }` where `payload` is a JSON string and the helper signs `<nonce>\n<sha256 hex of payload>`. The broker verifies with the pinned helper key, then checks that `payload.requestId` equals the id it sent. Failures map to `helper_signature_invalid` or `helper_binding_invalid` (502), unreachable to `helper_unavailable` (503), no pinned key to `helper_unpaired` (503). None is ever treated as approval.
 
