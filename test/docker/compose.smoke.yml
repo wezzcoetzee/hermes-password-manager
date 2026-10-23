@@ -1,0 +1,6 @@
+# Smoke-test override: the broker talks to a helper running in the smoke-runner container
+# instead of the host, for Linux hosts whose firewall blocks container -> host traffic.
+services:
+  broker:
+    environment:
+      HELPER_URL: http://smoke-runner:47800
