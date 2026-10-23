@@ -10,6 +10,7 @@ Use this map to find task context without loading every document. Existing archi
 | Stack and source map | [ARCHITECTURE.md](../ARCHITECTURE.md) |
 | Components, data, protocols and lifecycle diagrams | [Architecture](architecture.md) |
 | Installation, CLI, audit and adapter procedures | [Operations](operations.md) |
+| Agent-guided setup | [Setup skill](../skills/setup/SKILL.md) |
 | Threats and residual risks | [Security](SECURITY.md), [threat model](threat-model.md), [limitations](security-limitations.md) |
 | Recovery and verification | [Reliability](RELIABILITY.md), [quality](QUALITY_SCORE.md) |
 | Design rationale | [Design index](design-docs/index.md), [core beliefs](design-docs/core-beliefs.md) |
