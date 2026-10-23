@@ -10,6 +10,7 @@ AgentVault separates agent tools, policy enforcement, browser execution and nati
 | Policy and persistence | Node 24, TypeScript, built-in SQLite | `src/broker/`, `migrations/` |
 | Browser enforcement | Playwright Chromium | `src/browser-worker/` |
 | Credential provider | SwiftPM, Keychain, AppKit, LocalAuthentication | `native/AgentVaultHelper/` |
+| Chat login approval (optional) | Telegram Bot API, long poll from the broker | `src/broker/chat-approver.ts`; [ADR 0007](docs/adr/0007-configurable-login-approval.md) |
 | Development provider | Node helper with plaintext fake credentials | `src/dev-helper/` |
 | Operator interface | Host CLI and shell scripts | `src/cli/`, `scripts/` |
 | Deployment | Docker Compose broker and worker | `docker-compose.yml`, `docker/` |

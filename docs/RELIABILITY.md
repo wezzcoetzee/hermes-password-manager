@@ -5,6 +5,7 @@ The broker persists policy and audit state; browser contexts are disposable in-m
 ## Failure behavior
 
 - Helper denial or unavailability leaves login sessions anonymous. Signature or request-binding failures cannot count as consent.
+- On `chat` grants, a Telegram timeout (120s), a failed send or a missing bot configuration returns `approval_unavailable`. There is no fallback to the native prompt. A failed long poll is retried every 2s while a request is pending.
 - Broker startup terminates old live sessions and expires outstanding approvals, then asks the worker to close contexts. See [session lifecycle](architecture.md#session-lifecycle) for timers and retry behavior.
 - A worker restart loses browser contexts. It does not reconstruct cookies from SQLite.
 - Purchase enforcement denies when the broker cannot consume a valid matching approval.

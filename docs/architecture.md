@@ -36,6 +36,7 @@ flowchart TB
   BR -- "T3 signed + pinned keys" --> HP
   HP --> KC
   WK -- "T4 allowlist guard" --> WEB
+  BR -- "T5 bot token, owner-only taps" --> TG[Telegram, chat grants only]
 ```
 
 | Boundary | Control |
@@ -44,6 +45,7 @@ flowchart TB
 | T2 broker to worker | Shared token (`x-av-worker-token`, constant-time compare), `core` network is `internal: true` |
 | T3 broker to helper | ECDSA-signed requests and responses, pinned keys both ways, sealed credentials, human approval |
 | T4 worker to internet | Per-session origin allowlist, private-address block, redirect vetting, transaction boundary |
+| T5 broker to Telegram | Outbound long poll with AgentVault's own bot token; a tap counts only from the configured user's private chat, for a pending request id, within 120s ([ADR 0007](adr/0007-configurable-login-approval.md)) |
 
 ## Data stored
 

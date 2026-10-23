@@ -24,7 +24,8 @@ Check: `agentvault status` (compose state and token presence).
 
 | Situation | Behaviour |
 |---|---|
-| Mac locked or no GUI session | Helper cannot prompt: login and purchase requests return `approval_unavailable` / denial. Existing sessions keep working until they expire |
+| Mac locked or no GUI session | Helper cannot prompt: login and purchase requests return `approval_unavailable` / denial. `chat` and `auto` logins on unattended accounts skip the prompt, but may still fail while locked (unverified, see [limitations](security-limitations.md)). Existing sessions keep working until they expire |
+| Telegram unreachable, bot not set up, or no tap within 120s | `chat` grants return `approval_unavailable`; nothing is approved. Check `agentvault audit --event login_approval` and the bot token |
 | Helper not running | `helper_unavailable` (503); nothing is approved |
 | Not paired | `helper_unpaired` (503); run `agentvault pair` |
 | Docker not running | The adapter reports "AgentVault broker is unreachable. Is Docker running?" |
