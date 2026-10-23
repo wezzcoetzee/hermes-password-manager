@@ -89,7 +89,8 @@ export class BrowserSession {
     const request = route.request()
     const verdict = await this.guard(request.url(), request.method())
     if (verdict.allow === 'transaction') {
-      const summary = this.summaryBeforeAction
+      // Only a top-level navigation started during an agent action may spend an approval, not page scripts or prefetches.
+      const summary = request.isNavigationRequest() && request.frame() === this.page.mainFrame() ? this.summaryBeforeAction : undefined
       const decision = summary ? await consume(this.id, hashSummary(summary)) : { allowed: false, reason: 'order_summary_unreadable' }
       this.transaction = { status: decision.allowed ? 'submitted' : 'blocked', reason: decision.reason }
       log.info({ sessionId: this.id, allowed: decision.allowed, reason: decision.reason }, 'transaction boundary reached')
@@ -115,7 +116,8 @@ export class BrowserSession {
     if (!response) return route.abort('failed')
     const location = response.headers()['location']
     if (response.status() >= 300 && response.status() < 400 && location) {
-      const target = new URL(location, route.request().url()).href
+      const target = URL.parse(location, route.request().url())?.href
+      if (!target) return route.abort('failed')
       const verdict = await this.guard(target, 'GET')
       if (verdict.allow !== true) return this.reject(route, target, verdict.allow === 'transaction' ? 'manual_checkout_required' : verdict.reason)
     }
@@ -145,10 +147,12 @@ export class BrowserSession {
   async login(username: string, password: string): Promise<boolean> {
     const { login, origin } = this.site
     await this.page.goto(login.url, { waitUntil: 'domcontentloaded' })
-    // Never type a credential into a page that is not the site's own origin.
-    if (new URL(this.page.url()).origin !== origin) return false
+    // Never type a credential into a page outside the site's own origin; checked again right before the password.
+    const onLoginPage = () => new URL(this.page.url()).origin === origin
+    if (!onLoginPage()) return false
     this.secrets.add(password)
     await this.page.fill(login.username, username)
+    if (!onLoginPage()) return false
     await this.page.fill(login.password, password)
     await this.page.click(login.submit)
     const success = new RegExp(login.successPath)
@@ -226,6 +230,7 @@ export class BrowserSession {
     }
     await this.page.waitForLoadState('domcontentloaded').catch(() => undefined)
     await Promise.all(this.pending)
+    this.summaryBeforeAction = undefined
     await this.recoverFromBlockedNavigation()
     return {
       url: scrub(this.page.url(), this.secrets), title: scrub(await this.page.title().catch(() => ''), this.secrets),

@@ -256,3 +256,13 @@ describe('audit', () => {
     expect(dump).not.toMatch(/sid=[0-9a-f]{20,}/)
   })
 })
+
+describe('approval prompts', () => {
+  it('only one native prompt per session at a time', async () => {
+    const { data } = await call(hermes, 'browser_navigate', { url: `${sys.origin}/` })
+    sys.decisions.push('denied', 'denied')
+    const results = await Promise.all([0, 1].map(() => call(hermes, 'request_login', { sessionId: data.sessionId, accountId: 'test-shop-main' })))
+    expect(results.filter((r) => r.error?.startsWith('approval_pending'))).toHaveLength(1)
+    sys.decisions.length = 0
+  })
+})

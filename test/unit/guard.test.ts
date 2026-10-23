@@ -35,6 +35,17 @@ describe('createGuard', () => {
     expect(await dev('https://shop.example/checkout/submit', 'POST')).toEqual({ allow: 'transaction' })
     expect(await dev('https://shop.example/checkout/submit', 'GET')).toEqual({ allow: 'transaction' })
   })
+  it('cannot be bypassed by case, trailing slashes, matrix params or encoding (audit finding)', async () => {
+    const dev = createGuard({ ...withCheckout, allowPrivateNetwork: true })
+    for (const path of ['/Checkout/Submit', '/checkout/submit/', '/checkout/submit;x=1', '/checkout//submit', '/checkout/%73ubmit']) {
+      expect(await dev(`https://shop.example${path}`, 'POST'), path).toEqual({ allow: 'transaction' })
+    }
+  })
+  it('adapter sites still block other purchase-like submissions, and the boundary path on extra origins', async () => {
+    const dev = createGuard({ ...withCheckout, allowPrivateNetwork: true })
+    expect(await dev('https://shop.example/api/orders', 'POST')).toEqual({ allow: false, reason: 'manual_checkout_required' })
+    expect(await dev('https://cdn.shop.example/checkout/submit', 'POST')).toEqual({ allow: false, reason: 'manual_checkout_required' })
+  })
   it('without an adapter, checkout-like submissions require manual checkout', async () => {
     const dev = createGuard({ ...manual, allowPrivateNetwork: true })
     expect(await dev('https://shop.example/api/place-order', 'POST')).toEqual({ allow: false, reason: 'manual_checkout_required' })

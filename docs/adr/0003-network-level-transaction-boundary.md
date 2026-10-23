@@ -17,3 +17,9 @@ The worker routes every request. A request matching a site's `checkout.submitPat
 - Strong for sites with a reviewed adapter; heuristic and best-effort elsewhere.
 - Approval binds to the displayed summary, not the server-side cart (limitation 8).
 - The worker only asks; it cannot approve. A compromised worker cannot mint approvals but sits inside the credential TCB.
+
+## Amendment (adversarial review)
+
+- Paths are normalised (lowercase, no trailing slash, no `;params`, decoded once) and `submitPath` is matched case-insensitively.
+- The checkout-like heuristic is a backstop on every site, so adapter sites also block other purchase-like non-GET submissions.
+- Only a top-level navigation during an agent action can spend an approval; the pre-action summary is cleared when the action ends.

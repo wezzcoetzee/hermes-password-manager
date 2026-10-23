@@ -24,6 +24,18 @@ function maskUsername(username: string) {
 }
 
 export function createBroker({ db, sites, helper, worker, audit, now = Date.now }: BrokerDeps) {
+  /** One native prompt per session at a time, so an agent cannot flood the user with approvals. */
+  const prompting = new Set<string>()
+  async function withPrompt<T>(sessionId: string, fn: () => Promise<T>): Promise<T> {
+    if (prompting.has(sessionId)) throw new HttpError(409, 'approval_pending', 'An approval for this session is already waiting for the user')
+    prompting.add(sessionId)
+    try {
+      return await fn()
+    } finally {
+      prompting.delete(sessionId)
+    }
+  }
+
   const forbidden = (agent: AgentRow, message: string, entry: { sessionId?: string; accountId?: string; detail?: Record<string, string> } = {}) => {
     audit({ event: 'policy_violation', outcome: 'rejected', agentId: agent.id, ...entry, detail: { ...entry.detail, message } })
     return new HttpError(403, 'forbidden', message)
@@ -60,8 +72,8 @@ export function createBroker({ db, sites, helper, worker, audit, now = Date.now 
   async function openSession(agent: AgentRow, site: Site) {
     const id = opaqueId('ses')
     const expiresAt = now() + ANONYMOUS_SESSION_MINUTES * 60_000
-    db.prepare("INSERT INTO sessions (id, agent_id, site_id, state, created_at, expires_at) VALUES (?, ?, ?, 'anonymous', ?, ?)").run(id, agent.id, site.id, now(), expiresAt)
     await worker.open(id, site, expiresAt)
+    db.prepare("INSERT INTO sessions (id, agent_id, site_id, state, created_at, expires_at) VALUES (?, ?, ?, 'anonymous', ?, ?)").run(id, agent.id, site.id, now(), expiresAt)
     audit({ event: 'session_created', outcome: 'anonymous', agentId: agent.id, sessionId: id, detail: { site: site.id } })
     return id
   }
@@ -76,6 +88,58 @@ export function createBroker({ db, sites, helper, worker, audit, now = Date.now 
       audit({ event: 'transaction_execution', outcome: result.transaction.status, agentId: agent.id, sessionId: session.id, accountId: session.account_id, detail: { reason: result.transaction.reason } })
     }
     return result
+  }
+
+  async function requestLogin(agent: AgentRow, { sessionId, accountId, durationMinutes }: ToolInput<'request_login'>) {
+    const session = liveSession(agent, sessionId)
+    const account = grant(agent, accountId)
+    if (!account) throw forbidden(agent, 'Agent has no grant for this account', { sessionId, accountId })
+    if (account.site_id !== session.site_id) throw forbidden(agent, 'Account belongs to a different site than this session', { sessionId, accountId })
+    if (session.state !== 'anonymous') throw new HttpError(409, 'already_authenticated', 'Session is already signed in; open a new session for another account')
+    const site = siteFor(session.site_id)
+    const minutes = Math.min(durationMinutes, account.max_session_minutes)
+    const requestId = opaqueId('req')
+
+    audit({ event: 'credential_access', outcome: 'requested', agentId: agent.id, sessionId, accountId, detail: { requestId, minutes } })
+    const { decision, credential } = await helper.approveLogin({
+      requestId, agent: agent.name, site: { name: site.name, origin: site.origin },
+      account: { id: account.id, username: account.username }, durationMinutes: minutes,
+    })
+    audit({ event: 'login_approval', outcome: decision, agentId: agent.id, sessionId, accountId, detail: { requestId } })
+    if (decision !== 'approved' || !credential) return { status: decision === 'unavailable' ? 'approval_unavailable' : 'denied' }
+
+    const { ok } = await worker.login(sessionId, credential.username, credential.password)
+    audit({ event: 'login_result', outcome: ok ? 'authenticated' : 'failed', agentId: agent.id, sessionId, accountId })
+    if (!ok) return { status: 'login_failed' }
+
+    const expiresAt = now() + minutes * 60_000
+    const upgraded = db.prepare("UPDATE sessions SET state = 'authenticated', account_id = ?, expires_at = ? WHERE id = ? AND state = 'anonymous'").run(accountId, expiresAt, sessionId)
+    if (upgraded.changes !== 1) throw new HttpError(409, 'session_changed', 'Session changed during sign-in')
+    await worker.extend(sessionId, expiresAt)
+    return { status: 'authenticated', expiresAt: new Date(expiresAt).toISOString() }
+  }
+
+  async function requestTransactionApproval(agent: AgentRow, { sessionId }: ToolInput<'request_transaction_approval'>) {
+    const session = liveSession(agent, sessionId)
+    const account = session.account_id ? grant(agent, session.account_id) : undefined
+    if (session.state !== 'authenticated' || !account) throw forbidden(agent, 'Transactions require an authenticated session', { sessionId })
+    if (!account.allow_transactions) throw forbidden(agent, 'This agent is not permitted to make transactions on this account', { sessionId, accountId: account.id })
+    const site = siteFor(session.site_id)
+    if (!site.checkout) return { status: 'manual_checkout_required', message: `${site.name} has no verified checkout adapter. Ask the user to complete checkout themselves.` }
+
+    const { orderSummary, summaryHash } = await worker.act(sessionId, { type: 'order_summary' })
+    if (!orderSummary || !summaryHash) throw new HttpError(422, 'summary_unavailable', 'Could not read the order summary from the checkout page')
+    const id = opaqueId('txn')
+    db.prepare("INSERT INTO transaction_approvals (id, session_id, agent_id, summary_hash, merchant, total, currency, status, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)")
+      .run(id, sessionId, agent.id, summaryHash, orderSummary.merchant, orderSummary.total, orderSummary.currency, now(), now() + TRANSACTION_APPROVAL_TTL_MS)
+    audit({ event: 'transaction_approval', outcome: 'requested', agentId: agent.id, sessionId, accountId: account.id, detail: { approvalId: id, total: orderSummary.total, currency: orderSummary.currency } })
+
+    const decision = await helper.approveTransaction({ requestId: id, agent: agent.name, site: { name: site.name, origin: site.origin }, summary: orderSummary })
+    // The TTL starts when the user decides, not when the prompt appeared.
+    const expiresAt = now() + TRANSACTION_APPROVAL_TTL_MS
+    db.prepare('UPDATE transaction_approvals SET status = ?, expires_at = ? WHERE id = ?').run(decision === 'approved' ? 'approved' : 'denied', expiresAt, id)
+    audit({ event: 'transaction_approval', outcome: decision, agentId: agent.id, sessionId, accountId: account.id, detail: { approvalId: id } })
+    return { approvalId: id, status: decision === 'approved' ? 'approved' : 'denied', summary: orderSummary, ...(decision === 'approved' ? { expiresAt: new Date(expiresAt).toISOString(), next: 'Click the merchant\'s place-order button now. The approval works once.' } : {}) }
   }
 
   const handlers: { [K in ToolName]: (agent: AgentRow, input: ToolInput<K>) => Promise<unknown> } = {
@@ -95,38 +159,14 @@ export function createBroker({ db, sites, helper, worker, audit, now = Date.now 
         if (!site) throw forbidden(agent, `Origin ${origin} is not allowlisted for this agent`, { detail: { origin } })
         sessionId = await openSession(agent, site)
       }
-      const session = liveSession(agent, sessionId)
+    const session = liveSession(agent, sessionId)
       if (!siteOrigins(siteFor(session.site_id)).includes(origin)) throw forbidden(agent, `Origin ${origin} is not allowed in this session`, { sessionId, detail: { origin } })
       return { sessionId, ...(await act(agent, session, { type: 'navigate', url })) }
     },
 
-    async request_login(agent, { sessionId, accountId, durationMinutes }) {
-      const session = liveSession(agent, sessionId)
-      const account = grant(agent, accountId)
-      if (!account) throw forbidden(agent, 'Agent has no grant for this account', { sessionId, accountId })
-      if (account.site_id !== session.site_id) throw forbidden(agent, 'Account belongs to a different site than this session', { sessionId, accountId })
-      if (session.state !== 'anonymous') throw new HttpError(409, 'already_authenticated', 'Session is already signed in; open a new session for another account')
-      const site = siteFor(session.site_id)
-      const minutes = Math.min(durationMinutes, account.max_session_minutes)
-      const requestId = opaqueId('req')
+    request_login: (agent, input) => withPrompt(input.sessionId, () => requestLogin(agent, input)),
+    request_transaction_approval: (agent, input) => withPrompt(input.sessionId, () => requestTransactionApproval(agent, input)),
 
-      audit({ event: 'credential_access', outcome: 'requested', agentId: agent.id, sessionId, accountId, detail: { requestId, minutes } })
-      const { decision, credential } = await helper.approveLogin({
-        requestId, agent: agent.name, site: { name: site.name, origin: site.origin },
-        account: { id: account.id, username: account.username }, durationMinutes: minutes,
-      })
-      audit({ event: 'login_approval', outcome: decision, agentId: agent.id, sessionId, accountId, detail: { requestId } })
-      if (decision !== 'approved' || !credential) return { status: decision === 'unavailable' ? 'approval_unavailable' : 'denied' }
-
-      const { ok } = await worker.login(sessionId, credential.username, credential.password)
-      audit({ event: 'login_result', outcome: ok ? 'authenticated' : 'failed', agentId: agent.id, sessionId, accountId })
-      if (!ok) return { status: 'login_failed' }
-
-      const expiresAt = now() + minutes * 60_000
-      db.prepare("UPDATE sessions SET state = 'authenticated', account_id = ?, expires_at = ? WHERE id = ?").run(accountId, expiresAt, sessionId)
-      await worker.extend(sessionId, expiresAt)
-      return { status: 'authenticated', expiresAt: new Date(expiresAt).toISOString() }
-    },
 
     async get_session_status(agent, { sessionId }) {
       const row = db.prepare('SELECT * FROM sessions WHERE id = ? AND agent_id = ?').get(sessionId, agent.id) as SessionRow | undefined
@@ -153,29 +193,6 @@ export function createBroker({ db, sites, helper, worker, audit, now = Date.now 
     browser_back: async (agent, { sessionId }) => act(agent, liveSession(agent, sessionId), { type: 'back' }),
     browser_wait: async (agent, { sessionId, text, timeoutMs }) => act(agent, liveSession(agent, sessionId), { type: 'wait', text, timeoutMs }),
     browser_screenshot: async (agent, { sessionId }) => act(agent, liveSession(agent, sessionId), { type: 'screenshot' }),
-
-    async request_transaction_approval(agent, { sessionId }) {
-      const session = liveSession(agent, sessionId)
-      const account = session.account_id ? grant(agent, session.account_id) : undefined
-      if (session.state !== 'authenticated' || !account) throw forbidden(agent, 'Transactions require an authenticated session', { sessionId })
-      if (!account.allow_transactions) throw forbidden(agent, 'This agent is not permitted to make transactions on this account', { sessionId, accountId: account.id })
-      const site = siteFor(session.site_id)
-      if (!site.checkout) return { status: 'manual_checkout_required', message: `${site.name} has no verified checkout adapter. Ask the user to complete checkout themselves.` }
-
-      const { orderSummary, summaryHash } = await worker.act(sessionId, { type: 'order_summary' })
-      if (!orderSummary || !summaryHash) throw new HttpError(422, 'summary_unavailable', 'Could not read the order summary from the checkout page')
-      const id = opaqueId('txn')
-      db.prepare("INSERT INTO transaction_approvals (id, session_id, agent_id, summary_hash, merchant, total, currency, status, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)")
-        .run(id, sessionId, agent.id, summaryHash, orderSummary.merchant, orderSummary.total, orderSummary.currency, now(), now() + TRANSACTION_APPROVAL_TTL_MS)
-      audit({ event: 'transaction_approval', outcome: 'requested', agentId: agent.id, sessionId, accountId: account.id, detail: { approvalId: id, total: orderSummary.total, currency: orderSummary.currency } })
-
-      const decision = await helper.approveTransaction({ requestId: id, agent: agent.name, site: { name: site.name, origin: site.origin }, summary: orderSummary })
-      // The TTL starts when the user decides, not when the prompt appeared.
-      const expiresAt = now() + TRANSACTION_APPROVAL_TTL_MS
-      db.prepare('UPDATE transaction_approvals SET status = ?, expires_at = ? WHERE id = ?').run(decision === 'approved' ? 'approved' : 'denied', expiresAt, id)
-      audit({ event: 'transaction_approval', outcome: decision, agentId: agent.id, sessionId, accountId: account.id, detail: { approvalId: id } })
-      return { approvalId: id, status: decision === 'approved' ? 'approved' : 'denied', summary: orderSummary, ...(decision === 'approved' ? { expiresAt: new Date(expiresAt).toISOString(), next: 'Click the merchant\'s place-order button now. The approval works once.' } : {}) }
-    },
 
     async get_transaction_status(agent, { approvalId }) {
       const row = db.prepare('SELECT * FROM transaction_approvals WHERE id = ? AND agent_id = ?').get(approvalId, agent.id) as ApprovalRow | undefined

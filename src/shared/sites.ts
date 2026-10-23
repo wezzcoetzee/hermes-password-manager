@@ -65,13 +65,19 @@ export function loadSites(dir: string): Map<string, Site> {
 export const siteOrigins = (site: Site) => [site.origin, ...site.extraOrigins]
 
 /** Order summary as read from the merchant's checkout page by the browser worker. */
+/**
+ * Bounded and free of control/format characters (bidi overrides, zero-width), so a page cannot pad
+ * the native prompt or make it display something other than what is hashed. Out-of-bounds values
+ * are rejected, not truncated, so the hash always covers exactly what the user saw.
+ */
+const field = z.string().max(120).refine((v) => !/[\p{Cc}\p{Cf}]/u.test(v), 'contains control or format characters')
 export const orderSummarySchema = z.object({
-  merchant: z.string(),
-  items: z.array(z.object({ name: z.string(), variant: z.string(), quantity: z.string(), unitPrice: z.string() })).min(1),
-  shipping: z.string(),
-  total: z.string(),
-  currency: z.string(),
-  address: z.string(),
-  paymentMethod: z.string(),
+  merchant: field,
+  items: z.array(z.object({ name: field, variant: field, quantity: field, unitPrice: field })).min(1).max(10),
+  shipping: field,
+  total: field,
+  currency: field,
+  address: z.string().max(200).refine((v) => !/[\p{Cc}\p{Cf}]/u.test(v), 'contains control or format characters'),
+  paymentMethod: field,
 })
 export type OrderSummary = z.infer<typeof orderSummarySchema>

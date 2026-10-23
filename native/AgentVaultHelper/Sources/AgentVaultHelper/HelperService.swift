@@ -80,15 +80,17 @@ final class HelperService {
 
     private func transaction(_ req: TransactionRequest) -> TransactionResult {
         let s = req.summary
-        var rows: [(String, String)] = [("Merchant", "\(s.merchant) (\(req.site.origin))")]
+        // Money and destination first, so a long item list can never push them out of view.
+        var rows: [(String, String)] = [
+            ("Merchant", "\(s.merchant) (\(req.site.origin))"), ("Total", "\(s.total) \(s.currency)"),
+            ("Shipping", "\(s.shipping) \(s.currency)"), ("Deliver to", s.address), ("Payment method", s.paymentMethod),
+        ]
         for item in s.items {
             rows.append(("Product", item.name))
             rows.append(("  Size / variant", item.variant))
             rows.append(("  Quantity", item.quantity))
             rows.append(("  Unit price", "\(item.unitPrice) \(s.currency)"))
         }
-        rows += [("Shipping", "\(s.shipping) \(s.currency)"), ("Total", "\(s.total) \(s.currency)"),
-                 ("Deliver to", s.address), ("Payment method", s.paymentMethod)]
         let decision = Approval.ask(
             title: "\(Approval.clean(req.agent)) wants to place an order",
             rows: rows,

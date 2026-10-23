@@ -19,7 +19,11 @@ enum Approval {
 
     /// Website-derived text is untrusted: one line, bounded, so it cannot forge extra rows in the prompt.
     static func clean(_ value: String) -> String {
-        let flat = value.components(separatedBy: .newlines).joined(separator: " ").trimmingCharacters(in: .whitespaces)
+        // Drop control and format characters (bidi overrides, zero-width) so displayed text matches what was hashed.
+        let visible = String(String.UnicodeScalarView(value.unicodeScalars.filter {
+            $0.properties.generalCategory != .control && $0.properties.generalCategory != .format
+        }))
+        let flat = visible.components(separatedBy: .newlines).joined(separator: " ").trimmingCharacters(in: .whitespaces)
         return flat.count > 120 ? String(flat.prefix(120)) + "…" : flat
     }
 

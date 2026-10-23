@@ -37,9 +37,20 @@ export async function resolvesToPrivate(hostname: string): Promise<boolean> {
   }
 }
 
+/** Lenient servers route /Checkout/Place-Order/;x=1 to /checkout/place-order, so the guard must too. */
+export function normalisePath(pathname: string): string {
+  let path = pathname.split(';')[0] ?? ''
+  try {
+    path = decodeURIComponent(path)
+  } catch {
+    // keep the raw path; it still gets matched
+  }
+  return path.toLowerCase().replace(/\/{2,}/g, '/').replace(/(.)\/+$/, '$1')
+}
+
 export function createGuard(site: Site) {
   const allowed = new Set(siteOrigins(site))
-  const submitPath = site.checkout ? new RegExp(site.checkout.submitPath) : null
+  const submitPath = site.checkout ? new RegExp(site.checkout.submitPath, 'i') : null
 
   return async function check(rawUrl: string, method: string): Promise<Verdict> {
     let url: URL
@@ -52,10 +63,13 @@ export function createGuard(site: Site) {
     if (url.protocol !== 'https:' && url.protocol !== 'http:') return { allow: false, reason: 'scheme_not_allowed' }
     if (!allowed.has(url.origin)) return { allow: false, reason: 'origin_not_allowed' }
     if (!site.allowPrivateNetwork && await resolvesToPrivate(url.hostname)) return { allow: false, reason: 'private_network' }
-    if (url.origin === site.origin && submitPath?.test(url.pathname)) return { allow: 'transaction' }
-    if (!submitPath && method !== 'GET' && method !== 'HEAD' && CHECKOUT_LIKE.test(url.pathname)) {
-      return { allow: false, reason: 'manual_checkout_required' }
+    const path = normalisePath(url.pathname)
+    if (submitPath?.test(path)) {
+      // The boundary lives on the site's own origin; the same path on an extra origin is never auto-approvable.
+      return url.origin === site.origin ? { allow: 'transaction' } : { allow: false, reason: 'manual_checkout_required' }
     }
+    // Backstop for every site, adapter or not: other purchase-like submissions need a human at the keyboard.
+    if (method !== 'GET' && method !== 'HEAD' && CHECKOUT_LIKE.test(path)) return { allow: false, reason: 'manual_checkout_required' }
     return { allow: true }
   }
 }

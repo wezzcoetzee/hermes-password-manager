@@ -22,3 +22,7 @@ Known gaps. Docker, MCP and signatures do not make this system secure by themsel
 18. **Audit log is not tamper-evident.** It lives in the SQLite DB that the broker owner can edit.
 19. **Worker-broker traffic is plain HTTP** with a shared token on an internal network. Anything on that network with the token can call the worker.
 20. **Real sites are untested.** Only the mock shop has run. Bot detection, 2FA, CAPTCHAs and changing markup are unaddressed; see the pilot guidance in [operations.md](operations.md#phase-6-real-site-pilot).
+
+## Hardening from the adversarial review
+
+An independent review pass found and this branch fixed: purchase-path bypass via case, trailing slashes, `;params` or encoding (paths are now normalised); unbounded order summaries that could pad or spoof the native prompt (now capped and stripped of control/format characters, totals shown first); approvals spendable by page scripts or prefetches (only top-level navigations during an agent action count, and the pre-action summary is cleared afterwards); prompt flooding (one pending prompt per session); racing logins (conditional session upgrade); malformed `Location` headers hanging requests; WebRTC UDP egress (disabled via Chromium flags). Still open: secret scrubbing only matches exact values of 6+ characters, so re-encoded cookies or very short passwords can pass through page text if a trusted site echoes them; the worker session cap is global, not per agent.

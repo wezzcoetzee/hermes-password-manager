@@ -15,7 +15,7 @@ export async function createWorker(options: WorkerOptions) {
   const browser: Browser = await chromium.launch({
     headless: true,
     // Playwright talks to Chromium over a pipe; no remote debugging port is ever opened.
-    args: ['--disable-extensions', '--disable-background-networking', '--disable-sync', '--no-first-run', '--disable-features=Translate,MediaRouter'],
+    args: ['--force-webrtc-ip-handling-policy=disable_non_proxied_udp', '--webrtc-ip-handling-policy=disable_non_proxied_udp', '--disable-extensions', '--disable-background-networking', '--disable-sync', '--no-first-run', '--disable-features=Translate,MediaRouter'],
   })
   const sessions = new Map<string, BrowserSession>()
 
