@@ -1,0 +1,11 @@
+# Hermes Desktop / Hermes Agent: ~/.hermes/config.yaml
+# Verified against hermes-agent tools/mcp_tool.py. Tools appear as mcp_agentvault_<tool>.
+mcp_servers:
+  agentvault:
+    command: __NODE__                     # absolute path; Hermes filters PATH for stdio servers
+    args: ["__ROOT__/src/mcp-adapter/main.ts"]
+    env:
+      AGENTVAULT_BROKER_URL: "http://127.0.0.1:7800"
+      AGENTVAULT_TOKEN_FILE: "__HOME__/agent-token"
+    timeout: 200                          # approvals wait up to 120s for you
+    connect_timeout: 30
