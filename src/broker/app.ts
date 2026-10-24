@@ -2,12 +2,14 @@ import type { Identity } from '../shared/crypto.ts'
 import type { Logger } from '../shared/logger.ts'
 import type { Site } from '../shared/sites.ts'
 import { createAudit } from './audit.ts'
-import { createTelegramApprover } from './chat-approver.ts'
-import { HELPER_KEY_SETTING, TELEGRAM_CHAT_SETTING, TELEGRAM_TOKEN_SETTING } from './config.ts'
+import type { ChatApprover } from './chat-approver.ts'
+import { CHAT_PROVIDER_SETTING, DISCORD_TOKEN_SETTING, DISCORD_USER_SETTING, HELPER_KEY_SETTING, TELEGRAM_CHAT_SETTING, TELEGRAM_TOKEN_SETTING } from './config.ts'
 import { getSetting, type Db } from './db.ts'
+import { createDiscordApprover } from './discord-approver.ts'
 import { createHelperClient } from './helper-client.ts'
 import { createAgentServer, createInternalServer } from './server.ts'
 import { createBroker } from './service.ts'
+import { createTelegramApprover } from './telegram-approver.ts'
 import { createWorkerClient } from './worker-client.ts'
 
 export interface BrokerAppOptions {
@@ -18,15 +20,16 @@ export interface BrokerAppOptions {
   workerUrl: string
   workerToken: string
   log: Logger
-  /** Telegram Bot API base; tests point it at a fake. */
+  /** Chat provider API bases; tests point them at fakes. */
   telegramApiUrl?: string
+  discordApiUrl?: string
 }
 
 /** Wires the broker together. Shared by the container entrypoint and the e2e tests. */
-export function createBrokerApp({ db, identity, sites, helperUrl, workerUrl, workerToken, log, telegramApiUrl }: BrokerAppOptions) {
+export function createBrokerApp({ db, identity, sites, helperUrl, workerUrl, workerToken, log, telegramApiUrl, discordApiUrl }: BrokerAppOptions) {
   const audit = createAudit(db, log)
   const helper = createHelperClient(helperUrl, identity, () => getSetting(db, HELPER_KEY_SETTING))
-  const chat = createTelegramApprover({
+  const telegram = createTelegramApprover({
     log,
     apiBase: telegramApiUrl,
     config() {
@@ -35,6 +38,17 @@ export function createBrokerApp({ db, identity, sites, helperUrl, workerUrl, wor
       return token && chatId ? { token, chatId } : undefined
     },
   })
+  const discord = createDiscordApprover({
+    log,
+    apiBase: discordApiUrl,
+    config() {
+      const token = getSetting(db, DISCORD_TOKEN_SETTING)
+      const userId = getSetting(db, DISCORD_USER_SETTING)
+      return token && userId ? { token, userId } : undefined
+    },
+  })
+  // Installs set up before Discord support have no provider setting and use Telegram.
+  const chat: ChatApprover = { approveLogin: (req) => (getSetting(db, CHAT_PROVIDER_SETTING) === 'discord' ? discord : telegram).approveLogin(req) }
   const worker = createWorkerClient(workerUrl, workerToken)
   const broker = createBroker({ db, sites, helper, chat, worker, audit })
   broker.terminateStaleSessions()

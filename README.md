@@ -1,6 +1,6 @@
 # AgentVault
 
-Self-hosted credential broker and controlled browser for the Hermes AI agent. Hermes asks to sign in to a site; you approve in a native macOS prompt (with Touch ID), or per grant in Telegram or automatically; a sandboxed browser types the password so the agent never sees it. Purchases are blocked at the network layer until you approve the exact order.
+Self-hosted credential broker and controlled browser for the Hermes AI agent. Hermes asks to sign in to a site; you approve in a native macOS prompt (with Touch ID), or per grant in Telegram, Discord or automatically; a sandboxed browser types the password so the agent never sees it. Purchases are blocked at the network layer until you approve the exact order.
 
 **Status: MVP.** The Swift helper in `native/AgentVaultHelper/` has been built on macOS, paired with the broker and used for a fake-account login (Keychain storage, approval prompt and loopback server). Its protocol crypto (`Crypto.swift`) is also verified against the broker by `scripts/verify-crypto-interop.sh`. Denial, purchase approval, Touch ID and replay rejection have not been exercised by hand yet. Everything else (broker, browser worker, MCP adapter, dev helper) is covered by tests against a Node dev helper that implements the same protocol. See [docs/security-limitations.md](docs/security-limitations.md).
 
@@ -91,7 +91,7 @@ Hermes registers these as `mcp_agentvault_<tool>`.
 |---|---|
 | `list_accounts` | Accounts this agent may log in to (masked usernames, never secrets) |
 | `browser_navigate` | Open an allowlisted URL; omit `sessionId` to start a session |
-| `request_login` | Ask the user to approve a login (native prompt, Telegram or pre-approved, per grant); blocks until decided |
+| `request_login` | Ask the user to approve a login (native prompt, Telegram or Discord, or pre-approved, per grant); blocks until decided |
 | `get_session_status` | `anonymous`, `authenticated`, `expired`, `revoked`, `terminated` |
 | `revoke_session` | End a session and discard its cookies |
 | `browser_snapshot` | Page text plus numbered element refs (marked untrusted) |
@@ -119,6 +119,7 @@ Hermes registers these as `mcp_agentvault_<tool>`.
 | `grant <id> [--transactions] [--approval prompt\|chat\|auto] [--agent name]` | Let an agent use an account; choose who approves its logins ([modes](docs/operations.md#login-approval-modes)) |
 | `revoke <id> [--agent name]` | Remove that grant |
 | `chat telegram --chat-id <id>` | Set up AgentVault's own Telegram bot for `chat` approvals |
+| `chat discord --user-id <id>` | Or its own Discord bot; the provider set up last is used |
 | `audit [--event e] [--limit n] [--json]` | Show audit events |
 | `sessions`, `accounts`, `grants`, `status` | Inspect state |
 

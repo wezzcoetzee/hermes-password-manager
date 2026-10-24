@@ -5,7 +5,7 @@
 | Component | Runs | Responsibility | Holds |
 |---|---|---|---|
 | MCP adapter (`src/mcp-adapter`) | Host, spawned by Hermes over stdio | Validates tool input (zod), forwards to broker with the agent bearer token, 180s timeout for approval tools, 60s otherwise | Agent token (read from `AGENTVAULT_TOKEN_FILE`) |
-| credential-broker (`src/broker`) | Docker, published `127.0.0.1:7800` | AuthN of agents, grants, session state, approvals, audit, all policy decisions. Internal API on `:7801` for the worker. Optional Telegram long poll for chat login approvals | SQLite DB, broker keypairs (volume `broker-data`), worker token (docker secret), Telegram bot token (`settings`) |
+| credential-broker (`src/broker`) | Docker, published `127.0.0.1:7800` | AuthN of agents, grants, session state, approvals, audit, all policy decisions. Internal API on `:7801` for the worker. Optional Telegram long poll or Discord reaction polling for chat login approvals | SQLite DB, broker keypairs (volume `broker-data`), worker token (docker secret), chat bot token (`settings`) |
 | browser-worker (`src/browser-worker`) | Docker, no published port | Playwright Chromium contexts, one per session; network guard; types the password; reads order summary; scrubs output | Session cookies and the password transiently, in memory |
 | Native helper (`native/AgentVaultHelper`) | Host, LaunchAgent in the GUI session | Keychain storage, native prompts, Touch ID, signs responses, seals credentials | Passwords (Keychain), helper keypair, pinned broker keys |
 | Dev helper (`src/dev-helper`) | Linux dev/CI | Same protocol as the Swift helper, plaintext store, TTY prompt | Plaintext credentials (fake only) |
@@ -36,7 +36,7 @@ flowchart TB
   BR -- "T3 signed + pinned keys" --> HP
   HP --> KC
   WK -- "T4 allowlist guard" --> WEB
-  BR -- "T5 bot token, owner-only taps" --> TG[Telegram, chat grants only]
+  BR -- "T5 bot token, owner-only taps" --> TG[Telegram or Discord, chat grants only]
 ```
 
 | Boundary | Control |
@@ -45,7 +45,7 @@ flowchart TB
 | T2 broker to worker | Shared token (`x-av-worker-token`, constant-time compare), `core` network is `internal: true` |
 | T3 broker to helper | ECDSA-signed requests and responses, pinned keys both ways, sealed credentials, human approval |
 | T4 worker to internet | Per-session origin allowlist, private-address block, redirect vetting, transaction boundary |
-| T5 broker to Telegram | Outbound long poll with AgentVault's own bot token; a tap counts only from the configured user's private chat, for a pending request id, within 120s ([ADR 0007](adr/0007-configurable-login-approval.md)) |
+| T5 broker to chat provider | Outbound only, with AgentVault's own bot token. Telegram: long poll; a tap counts only from the configured user's private chat, for a pending request id. Discord: polls reactions on a per-request DM; only the configured user's ✅ or ❌ counts. Both expire after 120s ([ADR 0007](adr/0007-configurable-login-approval.md), [ADR 0008](adr/0008-discord-chat-approval.md)) |
 
 ## Data stored
 
@@ -59,7 +59,7 @@ SQLite at `/data/agentvault.db` (WAL), schema in `migrations/` (applied in order
 | `sessions` | id, agent, site, account, state, created/expires |
 | `transaction_approvals` | session, `summary_hash`, merchant, total, currency, status, expiry |
 | `audit_events` | ts, event, outcome, ids, JSON detail |
-| `settings` | pinned helper public key; Telegram bot token and owner chat id when chat approval is set up |
+| `settings` | pinned helper public key; chat provider, and the Telegram or Discord bot token and owner id when chat approval is set up |
 
 Also in `broker-data`: `keys/identity.json` (broker signing and sealing private keys, mode 0600).
 
@@ -118,7 +118,9 @@ sequenceDiagram
   N-->>B: signed response, sealed credential
 ```
 
-`auto` grants skip the Telegram step and audit `login_approval` `auto_approved`. Each login writes a `login_approval` row with `channel` `chat` or `auto` for the broker's decision, then one with `channel` `helper` for the helper's answer. Taps from anyone else, for unknown request ids or after a decision are answered "no longer pending" and ignored. Transaction approval never uses these modes.
+With Discord as the chat provider ([ADR 0008](adr/0008-discord-chat-approval.md)), the broker DMs the same text, adds ✅ and ❌, and polls who reacted every 2s instead of long polling. Only the configured user's reaction counts, and ❌ wins over ✅.
+
+`auto` grants skip the chat step and audit `login_approval` `auto_approved`. Each login writes a `login_approval` row with `channel` `chat` or `auto` for the broker's decision, then one with `channel` `helper` for the helper's answer. Telegram taps from anyone else, for unknown request ids or after a decision are answered "no longer pending" and ignored. Transaction approval never uses these modes.
 
 ## Purchase flow
 
@@ -204,7 +206,7 @@ Approval timeout: 120s (`APPROVAL_TIMEOUT_MS`); the broker's HTTP timeout is 130
 
 ## Broker to worker
 
-Plain HTTP on the `core` network (`internal: true`). Every call carries `x-av-worker-token`, a secret read from the docker secret `worker_token` (`./secrets/worker_token`) in both containers. The worker exposes `/sessions/{open,login,extend,action,close,close-all}`; the broker exposes only `/internal/transactions/consume` to it. Max 8 concurrent sessions. The worker is on `egress` for outbound web; the broker is on `host-link` for the helper, the published port and, when chat approval is configured, `api.telegram.org`. Containers run read-only, `cap_drop: ALL`, `no-new-privileges`, with CPU and memory limits.
+Plain HTTP on the `core` network (`internal: true`). Every call carries `x-av-worker-token`, a secret read from the docker secret `worker_token` (`./secrets/worker_token`) in both containers. The worker exposes `/sessions/{open,login,extend,action,close,close-all}`; the broker exposes only `/internal/transactions/consume` to it. Max 8 concurrent sessions. The worker is on `egress` for outbound web; the broker is on `host-link` for the helper, the published port and, when chat approval is configured, `api.telegram.org` or `discord.com`. Containers run read-only, `cap_drop: ALL`, `no-new-privileges`, with CPU and memory limits.
 
 ## Browser session controls
 

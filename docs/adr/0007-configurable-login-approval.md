@@ -1,6 +1,6 @@
 # 0007: Configurable login approval
 
-Status: Accepted (Swift `unattended` path built, not exercised on macOS)
+Status: Accepted (Swift `unattended` path built, not exercised on macOS). Amended by [ADR 0008](0008-discord-chat-approval.md), which adds Discord as a chat provider.
 
 ## Context
 Every `request_login` showed a native prompt on the Mac, so the operator had to be at the machine for each sign-in. Issue #4 asked for two more modes per grant: no approval, and approval through chat. The agent must never be able to approve itself, and a compromised broker should not be able to release passwords the operator never opted in. Before this change, [ADR 0006](0006-signed-helper-protocol.md) guaranteed that even with full broker access, a password left the Keychain only after the user approved.

@@ -6,7 +6,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { pino } from 'pino'
 import { createBrokerApp } from '../src/broker/app.ts'
-import { HELPER_KEY_SETTING, TELEGRAM_CHAT_SETTING, TELEGRAM_TOKEN_SETTING, loadOrCreateIdentity } from '../src/broker/config.ts'
+import { DISCORD_TOKEN_SETTING, DISCORD_USER_SETTING, HELPER_KEY_SETTING, TELEGRAM_CHAT_SETTING, TELEGRAM_TOKEN_SETTING, loadOrCreateIdentity } from '../src/broker/config.ts'
 import { openDb, setSetting } from '../src/broker/db.ts'
 import { createWorker } from '../src/browser-worker/worker.ts'
 import { createDevHelper, type Prompt, type StoredCredential } from '../src/dev-helper/helper.ts'
@@ -16,6 +16,7 @@ import { sha256 } from '../src/shared/ids.ts'
 import { siteSchema, type Site } from '../src/shared/sites.ts'
 import { createMcpServer } from '../src/mcp-adapter/adapter.ts'
 import { TEST_USER, createShop } from '../mock-shop/shop.ts'
+import { DISCORD_TOKEN, OWNER_DISCORD_ID, startFakeDiscord } from './fake-discord.ts'
 import { OWNER_CHAT_ID, TELEGRAM_TOKEN, startFakeTelegram } from './fake-telegram.ts'
 
 export const AGENT_TOKEN = 'test-agent-token-' + 'x'.repeat(20)
@@ -58,11 +59,15 @@ export async function startSystem() {
   const telegram = await startFakeTelegram()
   setSetting(db, TELEGRAM_TOKEN_SETTING, TELEGRAM_TOKEN)
   setSetting(db, TELEGRAM_CHAT_SETTING, OWNER_CHAT_ID)
+  // Both bots are set up but no provider is chosen, like an install from before Discord support: Telegram is used.
+  const discord = await startFakeDiscord()
+  setSetting(db, DISCORD_TOKEN_SETTING, DISCORD_TOKEN)
+  setSetting(db, DISCORD_USER_SETTING, OWNER_DISCORD_ID)
 
   const workerOptions = { token: WORKER_TOKEN, brokerInternalUrl: '', log, maxSessions: 64 }
   const worker = await createWorker(workerOptions)
   const workerPort = await listen(worker.server, 0, '127.0.0.1')
-  const app = createBrokerApp({ db, identity, sites, log, helperUrl: `http://127.0.0.1:${helperPort}`, workerUrl: `http://127.0.0.1:${workerPort}`, workerToken: WORKER_TOKEN, telegramApiUrl: telegram.url })
+  const app = createBrokerApp({ db, identity, sites, log, helperUrl: `http://127.0.0.1:${helperPort}`, workerUrl: `http://127.0.0.1:${workerPort}`, workerToken: WORKER_TOKEN, telegramApiUrl: telegram.url, discordApiUrl: discord.url })
   workerOptions.brokerInternalUrl = `http://127.0.0.1:${await listen(app.internalServer, 0, '127.0.0.1')}`
   const brokerPort = await listen(app.agentServer, 0, '127.0.0.1')
 
@@ -86,7 +91,7 @@ export async function startSystem() {
   }
 
   return {
-    origin, manualOrigin, shop, db, app, helper, credentials, decisions, telegram, brokerUrl, logLines, connect,
+    origin, manualOrigin, shop, db, app, helper, credentials, decisions, telegram, discord, brokerUrl, logLines, connect,
     async stop() {
       await worker.shutdown()
       app.stop()
@@ -94,6 +99,7 @@ export async function startSystem() {
       app.internalServer.close()
       helper.server.close()
       telegram.server.close()
+      discord.server.close()
       shop.server.close()
     },
   }
