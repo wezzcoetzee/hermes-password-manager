@@ -9,7 +9,7 @@ Use the `mcp_agentvault_*` tools, not the built-in browser, for any site that ne
 
 1. `browser_navigate` to the site (no sessionId) and keep the returned `sessionId`.
 2. `browser_snapshot` to read the page. Act with `browser_click`, `browser_fill`, `browser_select` using the `ref` values.
-3. When the site needs sign-in, call `list_accounts`, then `request_login` with the matching `accountId`. The user approves on their Mac or in Telegram, or the grant is pre-approved. You never see or type the password, and you cannot approve on the user's behalf.
+3. When the site needs sign-in, call `list_accounts`, then `request_login` with the matching `accountId`. The user approves on their Mac or in Telegram or Discord, or the grant is pre-approved. You never see or type the password, and you cannot approve on the user's behalf.
 4. On the checkout page call `request_transaction_approval`. Only after it returns `approved`, click the place-order button once.
 5. If it returns `manual_checkout_required`, stop and tell the user to finish checkout themselves.
 6. Call `revoke_session` when done.

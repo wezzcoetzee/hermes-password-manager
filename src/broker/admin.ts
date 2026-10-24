@@ -7,7 +7,7 @@ import { createPublicKey, randomBytes } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
 import { opaqueId, sha256 } from '../shared/ids.ts'
-import { HELPER_KEY_SETTING, TELEGRAM_CHAT_SETTING, TELEGRAM_TOKEN_SETTING, openBrokerState } from './config.ts'
+import { CHAT_PROVIDER_SETTING, DISCORD_TOKEN_SETTING, DISCORD_USER_SETTING, HELPER_KEY_SETTING, TELEGRAM_CHAT_SETTING, TELEGRAM_TOKEN_SETTING, openBrokerState } from './config.ts'
 import { APPROVAL_MODES, isApprovalMode } from '../shared/approval.ts'
 import { setSetting } from './db.ts'
 
@@ -17,7 +17,7 @@ const { values, positionals } = parseArgs({
   allowPositionals: true,
   options: {
     site: { type: 'string' }, username: { type: 'string' }, label: { type: 'string' }, 'max-minutes': { type: 'string' },
-    transactions: { type: 'boolean', default: false }, approval: { type: 'string', default: 'prompt' }, 'chat-id': { type: 'string' }, limit: { type: 'string', default: '50' }, event: { type: 'string' }, json: { type: 'boolean', default: false },
+    transactions: { type: 'boolean', default: false }, approval: { type: 'string', default: 'prompt' }, 'chat-id': { type: 'string' }, 'user-id': { type: 'string' }, limit: { type: 'string', default: '50' }, event: { type: 'string' }, json: { type: 'boolean', default: false },
   },
 })
 const { db, identity, sites } = openBrokerState()
@@ -71,7 +71,19 @@ switch (command) {
     if (!/^\d+:[\w-]{30,}$/.test(token)) fail('Expected a Telegram bot token on stdin')
     setSetting(db, TELEGRAM_TOKEN_SETTING, token)
     setSetting(db, TELEGRAM_CHAT_SETTING, chatId)
+    setSetting(db, CHAT_PROVIDER_SETTING, 'telegram')
     console.log('Telegram approvals configured')
+    break
+  }
+  case 'chat-discord': {
+    const userId = need(values['user-id'], '--user-id')
+    if (!/^\d{17,20}$/.test(userId)) fail('--user-id must be your numeric Discord user id')
+    const token = readFileSync(0, 'utf8').trim()
+    if (!/^[\w-]{20,}\.[\w-]{4,}\.[\w-]{20,}$/.test(token)) fail('Expected a Discord bot token on stdin')
+    setSetting(db, DISCORD_TOKEN_SETTING, token)
+    setSetting(db, DISCORD_USER_SETTING, userId)
+    setSetting(db, CHAT_PROVIDER_SETTING, 'discord')
+    console.log('Discord approvals configured')
     break
   }
   case 'revoke-grant':
@@ -106,7 +118,7 @@ switch (command) {
   default:
     console.log(`Commands: agent-add <name> | agent-disable <name> | account-add <id> --site --username [--label] [--max-minutes]
           account-remove <id> | grant <agent> <account> [--transactions] [--approval prompt|chat|auto] | revoke-grant <agent> <account>
-          grants | chat-telegram --chat-id <id> (bot token on stdin)
+          grants | chat-telegram --chat-id <id> | chat-discord --user-id <id> (bot token on stdin)
           pubkeys | pair-helper (PEM on stdin) | sites | accounts | sessions | audit [--event] [--limit] [--json]`)
 }
 db.close()

@@ -37,7 +37,7 @@ const { values, positionals } = parseArgs({
   args: rest, allowPositionals: true, strict: false,
   options: {
     site: { type: 'string' }, username: { type: 'string' }, label: { type: 'string' }, transactions: { type: 'boolean' }, agent: { type: 'string' },
-    approval: { type: 'string' }, 'chat-id': { type: 'string' },
+    approval: { type: 'string' }, 'chat-id': { type: 'string' }, 'user-id': { type: 'string' },
   },
 })
 
@@ -119,7 +119,7 @@ switch (command) {
       throw err
     }
     if (values.approval === 'prompt') setUnattended(id, false)
-    const logins = { prompt: 'on this Mac', chat: 'in Telegram', auto: 'automatically, without asking' }[approval]
+    const logins = { prompt: 'on this Mac', chat: 'in chat (Telegram or Discord, whichever is set up)', auto: 'automatically, without asking' }[approval]
     console.log(`Granted ${agent} access to ${id}; logins are approved ${logins}${values.transactions ? '. Transactions allowed, each one still needs your approval on this Mac' : ''}`)
     break
   }
@@ -135,6 +135,12 @@ switch (command) {
     if (typeof chatId !== 'string') throw new Error('Usage: agentvault chat telegram --chat-id <your numeric Telegram user id>')
     // The token goes straight to the broker's store and is never echoed or written on the host.
     console.log(admin(['chat-telegram', '--chat-id', chatId], await ask('AgentVault bot token (hidden): ', true)))
+    break
+  }
+  case 'chat discord': {
+    const userId = values['user-id']
+    if (typeof userId !== 'string') throw new Error('Usage: agentvault chat discord --user-id <your numeric Discord user id>')
+    console.log(admin(['chat-discord', '--user-id', userId], await ask('AgentVault bot token (hidden): ', true)))
     break
   }
   case 'audit':
@@ -157,7 +163,8 @@ switch (command) {
   grant <id> [--transactions] [--approval mode]      allow an agent to use an account; [--agent name]
                                                      login approval: prompt (default), chat or auto
   revoke <id> [--agent name]                         remove that permission
-  chat telegram --chat-id <id>                       set up AgentVault's own bot for chat approvals
+  chat telegram --chat-id <id>                       set up AgentVault's own Telegram bot for chat approvals
+  chat discord --user-id <id>                        or its own Discord bot; the one set up last is used
   audit [--event e] [--limit n] [--json]             show audit events
   sessions | accounts | grants | status`)
 }

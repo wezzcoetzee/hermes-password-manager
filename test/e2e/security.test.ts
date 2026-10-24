@@ -2,10 +2,11 @@ import type { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { TEST_USER } from '../../mock-shop/shop.ts'
 import { createBrokerApp } from '../../src/broker/app.ts'
-import { HELPER_KEY_SETTING } from '../../src/broker/config.ts'
+import { CHAT_PROVIDER_SETTING, HELPER_KEY_SETTING } from '../../src/broker/config.ts'
 import { setSetting } from '../../src/broker/db.ts'
 import { generateKeyPair } from '../../src/shared/crypto.ts'
 import { postJson } from '../../src/shared/http.ts'
+import { DISCORD_TOKEN } from '../fake-discord.ts'
 import { TELEGRAM_TOKEN, waitFor } from '../fake-telegram.ts'
 import { OTHER_AGENT_TOKEN, call, ref, startSystem, type System } from '../harness.ts'
 
@@ -254,6 +255,7 @@ describe('audit', () => {
     const dump = JSON.stringify(sys.db.prepare('SELECT * FROM audit_events').all()) + sys.logLines.join('')
     expect(dump).not.toContain(TEST_USER.password)
     expect(dump).not.toContain(TELEGRAM_TOKEN)
+    expect(dump).not.toContain(DISCORD_TOKEN)
     expect(dump).not.toContain('1 Test Street')
     expect(dump).not.toMatch(/sid=[0-9a-f]{20,}/)
   })
@@ -354,5 +356,27 @@ describe('login approval modes', () => {
       }
       expect((await call(hermes, 'get_session_status', { sessionId })).data.state).toBe('anonymous')
     })
+  })
+
+  it("with Discord set up last, chat approval goes to Discord and counts only the owner's reaction", async () => {
+    setSetting(sys.db, CHAT_PROVIDER_SETTING, 'discord')
+    try {
+      await withApproval('chat', true, async () => {
+        const { discord, telegram } = sys
+        const [sent, telegramSent, prompts] = [discord.sent.length, telegram.sent.length, sys.helper.prompts.length]
+        const pending = login(await anonymousSession())
+        await waitFor(() => discord.sent.length > sent && discord.reactionsOnLatest()['❌']?.length === 1)
+        expect(discord.sent.at(-1)).not.toContain(TEST_USER.email)
+
+        discord.react('approve', '999999999999999999')
+        discord.react('approve')
+        expect((await pending).status).toBe('authenticated')
+        expect(telegram.sent.length).toBe(telegramSent)
+        expect(sys.helper.prompts.length).toBe(prompts)
+        expect(lastLoginApproval()).toMatchObject({ outcome: 'approved', detail: expect.stringContaining('"channel":"chat"') })
+      })
+    } finally {
+      setSetting(sys.db, CHAT_PROVIDER_SETTING, 'telegram')
+    }
   })
 })

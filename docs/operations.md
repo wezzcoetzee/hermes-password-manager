@@ -25,7 +25,7 @@ Check: `agentvault status` (compose state and token presence).
 | Situation | Behaviour |
 |---|---|
 | Mac locked or no GUI session | Helper cannot prompt: login and purchase requests return `approval_unavailable` / denial. `chat` and `auto` logins on unattended accounts skip the prompt, but may still fail while locked (unverified, see [limitations](security-limitations.md)). Existing sessions keep working until they expire |
-| Telegram unreachable, bot not set up, or no tap within 120s | `chat` grants return `approval_unavailable`; nothing is approved. Check `agentvault audit --event login_approval` and the bot token |
+| Chat provider unreachable, bot not set up, or no tap or reaction within 120s | `chat` grants return `approval_unavailable`; nothing is approved. Check `agentvault audit --event login_approval` and the bot token. On Discord, also check the bot shares a server with you and may DM you |
 | Helper not running | `helper_unavailable` (503); nothing is approved |
 | Not paired | `helper_unpaired` (503); run `agentvault pair` |
 | Docker not running | The adapter reports "AgentVault broker is unreachable. Is Docker running?" |
@@ -45,15 +45,15 @@ Event names: `agent_auth`, `policy_violation`, `session_created`, `session_expir
 
 ## Login approval modes
 
-Each grant chooses who approves its logins. Purchases always use the native prompt. See [ADR 0007](adr/0007-configurable-login-approval.md).
+Each grant chooses who approves its logins. Purchases always use the native prompt. See [ADR 0007](adr/0007-configurable-login-approval.md) and [ADR 0008](adr/0008-discord-chat-approval.md).
 
 | Mode | Command | Who approves |
 |---|---|---|
 | `prompt` (default) | `agentvault grant <id>` | Native prompt and Touch ID on the Mac |
-| `chat` | `agentvault grant <id> --approval chat` | You, by tapping Approve once in Telegram within 120s |
+| `chat` | `agentvault grant <id> --approval chat` | You, by tapping Approve once in Telegram or reacting ✅ in Discord within 120s |
 | `auto` | `agentvault grant <id> --approval auto` | Nobody; the login is audited as `auto_approved` |
 
-`chat` and `auto` first ask the helper to mark the account unattended, with a native confirmation and Touch ID. Without that flag the helper still prompts. The flag belongs to the account, not the grant: `--approval prompt` or `revoke` for any agent clears it, and other agents' `chat` or `auto` grants on that account then fall back to the native prompt. Re-enrolling a credential (`credential rotate`) also clears it. On a `chat` grant without the flag, the native prompt follows the Telegram tap; rerun `agentvault grant <id> --approval chat` to set it again. A plain `grant <id>` sets the broker grant back to `prompt` but leaves the helper flag alone.
+`chat` and `auto` first ask the helper to mark the account unattended, with a native confirmation and Touch ID. Without that flag the helper still prompts. The flag belongs to the account, not the grant: `--approval prompt` or `revoke` for any agent clears it, and other agents' `chat` or `auto` grants on that account then fall back to the native prompt. Re-enrolling a credential (`credential rotate`) also clears it. On a `chat` grant without the flag, the native prompt follows the chat approval; rerun `agentvault grant <id> --approval chat` to set it again. A plain `grant <id>` sets the broker grant back to `prompt` but leaves the helper flag alone.
 
 ### Set up Telegram approval
 
@@ -65,6 +65,18 @@ Use a bot for AgentVault only, not the one Hermes uses. If approvals came throug
 4. `agentvault grant <id> --approval chat`.
 
 Only taps from that user id, in its private chat with the bot, count. If the bot is not set up or Telegram is unreachable, `request_login` returns `approval_unavailable`; it does not fall back to the native prompt.
+
+### Set up Discord approval
+
+Use a Discord application for AgentVault only, not the one Hermes uses, for the same reason. Chat approval uses one provider at a time: whichever of `chat telegram` or `chat discord` you ran last.
+
+1. Create an application in the Discord Developer Portal, add a bot and copy its token. No privileged intents or interactions endpoint are needed; the broker only makes outbound REST calls.
+2. Invite the bot to a server you are in. A private server with just you and the bot is enough. Keep "Allow direct messages from server members" on for that server, so the bot can DM you.
+3. Turn on Developer Mode in Discord and copy your user id (right-click your name, Copy User ID).
+4. `agentvault chat discord --user-id <your id>` and paste the token at the hidden prompt. It is stored only in the broker's `settings` table.
+5. `agentvault grant <id> --approval chat`.
+
+Each login sends a DM with ✅ and ❌ already added. React ✅ to approve once or ❌ to deny. Only your user id's reaction counts, and ❌ wins if both are set. With no decision in 120s the DM is marked expired and `request_login` returns `approval_unavailable`.
 
 ## Revoking access
 
