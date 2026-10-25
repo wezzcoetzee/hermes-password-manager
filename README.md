@@ -4,6 +4,10 @@ Self-hosted credential broker and controlled browser for the Hermes AI agent. He
 
 **Status: MVP.** The Swift helper in `native/AgentVaultHelper/` has been built on macOS, paired with the broker and used for a fake-account login (Keychain storage, approval prompt and loopback server). Its protocol crypto (`Crypto.swift`) is also verified against the broker by `scripts/verify-crypto-interop.sh`. Denial, purchase approval, Touch ID and replay rejection have not been exercised by hand yet. Everything else (broker, browser worker, MCP adapter, dev helper) is covered by tests against a Node dev helper that implements the same protocol. See [docs/security-limitations.md](docs/security-limitations.md).
 
+## How it works
+
+![How AgentVault signs an agent in](docs/assets/how-it-works.svg)
+
 ## Architecture
 
 ```mermaid
@@ -18,6 +22,7 @@ flowchart LR
   B -- "signed HTTP<br/>host.docker.internal:47800" --> N[Native Swift helper<br/>host, LaunchAgent]
   N <--> K[(macOS Keychain)]
   N <--> P[Native prompt + Touch ID]
+  B -- "chat approvals<br/>(own bot)" --> C[Telegram or Discord]
   W -- allowlisted origins only --> S[(Merchant sites)]
 ```
 
@@ -34,7 +39,7 @@ src/mcp-adapter/    stdio MCP server for Hermes
 src/dev-helper/     Node stand-in for the native helper (Linux dev and CI only)
 src/cli/            host-side `agentvault` CLI
 src/shared/         tool schemas, site schema, helper/worker protocols, crypto
-native/AgentVaultHelper/  Swift helper (SwiftPM): pair | enroll | delete | serve   (not yet built on macOS)
+native/AgentVaultHelper/  Swift helper (SwiftPM): pair | enroll | delete | serve
 sites/              reviewed site adapters (JSON)
 migrations/         SQLite schema
 mock-shop/          local shop used by tests
@@ -158,10 +163,9 @@ Only the interop script touches Swift code; the AppKit, Keychain and LocalAuthen
 ## Docs
 
 - [Agent guidance](AGENTS.md) and [documentation map](docs/index.md)
-
 - [Architecture](docs/architecture.md)
 - [Threat model](docs/threat-model.md)
 - [Security limitations](docs/security-limitations.md)
 - [Operations](docs/operations.md)
 - [Research (Hermes, Apple Passwords, macOS options)](docs/research.md)
-- ADRs: [0001](docs/adr/0001-hybrid-native-plus-docker.md), [0002](docs/adr/0002-apple-passwords-not-integrated.md), [0003](docs/adr/0003-network-level-transaction-boundary.md), [0004](docs/adr/0004-site-adapters-as-reviewed-config.md), [0005](docs/adr/0005-sqlite-node-builtin-and-no-build-step.md), [0006](docs/adr/0006-signed-helper-protocol.md)
+- ADRs: [0001](docs/adr/0001-hybrid-native-plus-docker.md), [0002](docs/adr/0002-apple-passwords-not-integrated.md), [0003](docs/adr/0003-network-level-transaction-boundary.md), [0004](docs/adr/0004-site-adapters-as-reviewed-config.md), [0005](docs/adr/0005-sqlite-node-builtin-and-no-build-step.md), [0006](docs/adr/0006-signed-helper-protocol.md), [0007](docs/adr/0007-configurable-login-approval.md), [0008](docs/adr/0008-discord-chat-approval.md)
