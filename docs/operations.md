@@ -20,7 +20,7 @@ Prerequisites: Docker Desktop, Node 24, Xcode CLT (Swift 5.9+). The script is ex
 | `pair` | Exchanges keys between the broker and the native helper. Run it again after reinstalling either one. See [architecture](architecture.md) |
 | `credential add <id> --site <site> [--username u] [--label l]` | Saves a password. The helper asks for the username (if not given) and the password, then stores them in the Keychain. The broker records the account. `<site>` must be a reviewed adapter in `sites/`; unknown ids print the known list |
 | `credential rotate <id> --site <site> [--username u]` | Replaces the stored password through the same helper prompt. The broker record and grants stay as they are |
-| `credential remove <id>` | Deletes the Keychain item and the broker account |
+| `credential remove <id>` | Deletes the Keychain item and the broker account, revoking its live sessions |
 | `accounts` | Lists saved accounts: id, site, label and maximum session length. Passwords are never shown, since only the Keychain holds them |
 | `grant <id> [--transactions] [--approval prompt\|chat\|auto] [--agent name]` | Lets an agent (default `hermes`) use an account. `--transactions` allows purchase approval requests. Approval modes are described [below](#login-approval-modes). Running it again updates the grant |
 | `revoke <id> [--agent name]` | Removes the grant and clears the helper's unattended flag |

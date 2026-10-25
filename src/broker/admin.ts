@@ -48,9 +48,21 @@ switch (command) {
     console.log(JSON.stringify({ id, origin: sites.get(site)?.origin }))
     break
   }
-  case 'account-remove':
-    db.prepare('DELETE FROM accounts WHERE id = ?').run(need(positionals[0], '<account-id>'))
+  case 'account-remove': {
+    // Sessions keep their history but must stop referencing the account, or the foreign key blocks the delete.
+    const id = need(positionals[0], '<account-id>')
+    db.exec('BEGIN')
+    try {
+      db.prepare("UPDATE sessions SET state = 'revoked' WHERE account_id = ? AND state IN ('anonymous', 'authenticated')").run(id)
+      db.prepare('UPDATE sessions SET account_id = NULL WHERE account_id = ?').run(id)
+      db.prepare('DELETE FROM accounts WHERE id = ?').run(id)
+      db.exec('COMMIT')
+    } catch (err) {
+      db.exec('ROLLBACK')
+      throw err
+    }
     break
+  }
   case 'grant': {
     const [agentName, accountId] = [need(positionals[0], '<agent>'), need(positionals[1], '<account-id>')]
     const agent = db.prepare('SELECT id FROM agents WHERE name = ?').get(agentName) as { id: string } | undefined
