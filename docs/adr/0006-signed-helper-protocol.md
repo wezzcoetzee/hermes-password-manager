@@ -1,6 +1,6 @@
 # 0006: Signed broker-to-helper protocol
 
-Status: Accepted (Swift side unverified)
+Status: Accepted (Swift side verified on macOS, including replay rejection)
 
 ## Context
 The broker in a container calls the host helper over `host.docker.internal`. Any local or container process could try to hit that port, or impersonate the helper and return a fake approval.

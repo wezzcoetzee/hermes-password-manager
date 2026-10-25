@@ -1,6 +1,6 @@
 # 0001: Hybrid native helper plus Docker
 
-Status: Accepted (MVP; native half unverified)
+Status: Accepted (MVP; native half verified on macOS with fake accounts)
 
 ## Context
 Three jobs with different needs: hold passwords and ask the user (needs Keychain, Touch ID, GUI session: native macOS), run an untrusted-web browser (needs isolation and easy teardown), and enforce policy (needs to be unreachable by the agent's tool surface).
