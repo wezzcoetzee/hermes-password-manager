@@ -1,6 +1,6 @@
 # 0007: Configurable login approval
 
-Status: Accepted (Swift `unattended` path built, not exercised on macOS). Amended by [ADR 0008](0008-discord-chat-approval.md), which adds Discord as a chat provider.
+Status: Accepted (Swift `unattended` path verified on macOS through a `chat` grant; `auto` not exercised). Amended by [ADR 0008](0008-discord-chat-approval.md), which adds Discord as a chat provider.
 
 ## Context
 Every `request_login` showed a native prompt on the Mac, so the operator had to be at the machine for each sign-in. Issue #4 asked for two more modes per grant: no approval, and approval through chat. The agent must never be able to approve itself, and a compromised broker should not be able to release passwords the operator never opted in. Before this change, [ADR 0006](0006-signed-helper-protocol.md) guaranteed that even with full broker access, a password left the Keychain only after the user approved.
@@ -38,4 +38,4 @@ flowchart LR
 - For accounts marked unattended, a compromised broker can release the password without a human. The same-user residual risk in the [threat model](../threat-model.md) now covers those accounts.
 - Chat approval is only as strong as the operator's Telegram account and Telegram's servers. Telegram sees the agent name, site, account id and request id, but not usernames or passwords.
 - The broker needs outbound HTTPS to `api.telegram.org` (via `host-link`) when chat approval is configured.
-- `LoginRequest` gained `unattended`. Older helpers ignore it and prompt, which is safe. The Swift implementation compiles but has not been exercised by hand. Whether an unattended release can read a `WhenUnlockedThisDeviceOnly` item while the screen is locked is unverified.
+- `LoginRequest` gained `unattended`. Older helpers ignore it and prompt, which is safe. The Swift implementation has been exercised by hand through a `chat` grant; `auto` has not. Whether an unattended release can read a `WhenUnlockedThisDeviceOnly` item while the screen is locked is unverified.

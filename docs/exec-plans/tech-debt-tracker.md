@@ -1,11 +1,10 @@
 # Technical debt and validation tracker
 
-This tracker indexes gaps already documented in the repository as of 2026-10-23. It assigns no delivery commitment or unsupported severity score; full risk descriptions remain in [security limitations](../security-limitations.md).
+This tracker indexes gaps already documented in the repository as of 2026-10-25. It assigns no delivery commitment or unsupported severity score; full risk descriptions remain in [security limitations](../security-limitations.md).
 
 | Gap | Impact | Next evidence needed |
 |---|---|---|
-| Native helper partly exercised on macOS | Build, pairing and fake-account login pass; denial, purchase, Touch ID and replay unverified | Manually test denial, purchase and replay rejection |
-| Unattended login release on macOS | Chat and auto grants are covered only by the dev helper | Manually test `agentvault grant --approval auto` on a fake account, including with the screen locked |
+| Auto login approval on macOS | Unattended release works for `chat` grants; `auto` grants and a locked screen are covered only by the dev helper | Manually test `agentvault grant --approval auto` on a fake account, including with the screen locked |
 | Real-site workflows untested | Selectors, checkout and bot defenses may break | Dedicated low-risk pilot per operations runbook |
 | Same-user Docker access | Agent can reach operator files and container state | Validate a separate-user deployment model |
 | Exact-value scrubbing and screenshot limits | Re-encoded or unknown secrets may be visible | Threat-specific fixtures before changing output filtering |
