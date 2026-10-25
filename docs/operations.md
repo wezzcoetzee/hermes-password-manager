@@ -10,6 +10,32 @@ scripts/install.sh
 
 Prerequisites: Docker Desktop, Node 24, Xcode CLT (Swift 5.9+). The script is expected to build `native/AgentVaultHelper`, create `secrets/worker_token`, start the compose stack, create the `hermes` agent token at `~/.agentvault/agent-token`, install the LaunchAgent and pair keys. Read the script before running it. Then enroll accounts (`agentvault credential add`, `agentvault grant`) and add the Hermes config from the README.
 
+## CLI reference
+
+`agentvault` (`src/cli/main.ts`) runs on the host. Broker commands run `src/broker/admin.ts` inside the broker container through `docker compose exec`, so the stack must be up. Passwords and bot tokens never appear as arguments: passwords are typed into the native helper's own prompt, and bot tokens are typed at a hidden prompt. Run `agentvault` with no arguments to print the built-in help.
+
+| Command | What it does |
+|---|---|
+| `agent add [name]` | Creates an agent (default `hermes`) and writes its token to `~/.agentvault/agent-token`, or `agent-token-<name>` for other names (mode 600) |
+| `pair` | Exchanges keys between the broker and the native helper. Run it again after reinstalling either one. See [architecture](architecture.md) |
+| `credential add <id> --site <site> [--username u] [--label l]` | Saves a password. The helper asks for the username (if not given) and the password, then stores them in the Keychain. The broker records the account. `<site>` must be a reviewed adapter in `sites/`; unknown ids print the known list |
+| `credential rotate <id> --site <site> [--username u]` | Replaces the stored password through the same helper prompt. The broker record and grants stay as they are |
+| `credential remove <id>` | Deletes the Keychain item and the broker account |
+| `accounts` | Lists saved accounts: id, site, label and maximum session length. Passwords are never shown, since only the Keychain holds them |
+| `grant <id> [--transactions] [--approval prompt\|chat\|auto] [--agent name]` | Lets an agent (default `hermes`) use an account. `--transactions` allows purchase approval requests. Approval modes are described [below](#login-approval-modes). Running it again updates the grant |
+| `revoke <id> [--agent name]` | Removes the grant and clears the helper's unattended flag |
+| `grants` | Lists each grant's agent, account, transaction right and approval mode |
+| `chat telegram --chat-id <id>` | Sets up [Telegram approvals](#set-up-telegram-approval) |
+| `chat discord --user-id <id> [--channel-id <id>]` | Sets up [Discord approvals](#set-up-discord-approval), in DMs or in a shared channel. The chat provider set up last is the one used |
+| `sessions` | Lists the 20 most recent browser sessions with state and expiry |
+| `audit [--event e] [--limit n] [--json]` | Shows audit events, newest first (default 50). See [Audit](#audit) |
+| `status` | Shows compose state and whether the agent token is present |
+
+| Environment variable | Default | Purpose |
+|---|---|---|
+| `AGENTVAULT_HOME` | `~/.agentvault` | Where agent tokens and the installed helper live |
+| `AGENTVAULT_HELPER` | The helper app in `$AGENTVAULT_HOME/bin` | Helper command. Set `node src/dev-helper/main.ts` for Linux development (fake credentials only) |
+
 ## Auto start
 
 | Piece | How |

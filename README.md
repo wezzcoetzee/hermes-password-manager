@@ -63,7 +63,7 @@ agentvault credential add lululemon --site <site>   # password is typed into the
 agentvault grant lululemon                   # add --transactions to allow purchase approval requests
 ```
 
-`<site>` is the `id` of a file in `sites/`. Only `test-shop` ships; add real sites per [docs/operations.md](docs/operations.md#adding-a-site-adapter). The installer registers the MCP server with `hermes mcp add` (or prints the config below if the `hermes` CLI is missing) and installs the Hermes skill.
+`<site>` is the `id` of a file in `sites/`. Only `test-shop` ships; add real sites per [docs/operations.md](docs/operations.md#adding-a-site-adapter). Every command is listed in the [CLI reference](docs/operations.md#cli-reference). The installer registers the MCP server with `hermes mcp add` (or prints the config below if the `hermes` CLI is missing) and installs the Hermes skill.
 
 ## Quick start (Linux dev)
 
