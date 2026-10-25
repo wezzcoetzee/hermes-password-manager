@@ -1,6 +1,6 @@
 # 0008: Discord chat approval through reactions
 
-Status: Accepted (tested against a fake Discord API, not yet against Discord)
+Status: Accepted (tested against a fake Discord API, not yet against Discord). Amended by [ADR 0009](0009-discord-shared-bot-channel.md), which allows a channel and Hermes' own bot.
 
 ## Context
 [ADR 0007](0007-configurable-login-approval.md) made Telegram the only `chat` channel. It ruled out Discord because interactions need a public HTTPS endpoint into the broker. That holds for buttons: a click reaches a bot only through an interactions endpoint or the Gateway WebSocket. Reactions are different, because the REST API lists who reacted to a message. Issue #8 asked for Discord, so operators who run Hermes on Discord do not need Telegram as well.

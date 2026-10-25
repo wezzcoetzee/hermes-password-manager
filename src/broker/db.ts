@@ -37,3 +37,5 @@ export const getSetting = (db: Db, key: string) =>
 
 export const setSetting = (db: Db, key: string, value: string) =>
   db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value').run(key, value)
+
+export const deleteSetting = (db: Db, key: string) => db.prepare('DELETE FROM settings WHERE key = ?').run(key)

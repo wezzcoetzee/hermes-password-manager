@@ -124,7 +124,7 @@ Hermes registers these as `mcp_agentvault_<tool>`.
 | `grant <id> [--transactions] [--approval prompt\|chat\|auto] [--agent name]` | Let an agent use an account; choose who approves its logins ([modes](docs/operations.md#login-approval-modes)) |
 | `revoke <id> [--agent name]` | Remove that grant |
 | `chat telegram --chat-id <id>` | Set up AgentVault's own Telegram bot for `chat` approvals |
-| `chat discord --user-id <id>` | Or its own Discord bot; the provider set up last is used |
+| `chat discord --user-id <id> [--channel-id <id>]` | Or Discord: a DM from its own bot, or a post in a channel, where Hermes' bot can be reused; the provider set up last is used |
 | `audit [--event e] [--limit n] [--json]` | Show audit events |
 | `sessions`, `accounts`, `grants`, `status` | Inspect state |
 
@@ -168,4 +168,4 @@ Only the interop script touches Swift code; the AppKit, Keychain and LocalAuthen
 - [Security limitations](docs/security-limitations.md)
 - [Operations](docs/operations.md)
 - [Research (Hermes, Apple Passwords, macOS options)](docs/research.md)
-- ADRs: [0001](docs/adr/0001-hybrid-native-plus-docker.md), [0002](docs/adr/0002-apple-passwords-not-integrated.md), [0003](docs/adr/0003-network-level-transaction-boundary.md), [0004](docs/adr/0004-site-adapters-as-reviewed-config.md), [0005](docs/adr/0005-sqlite-node-builtin-and-no-build-step.md), [0006](docs/adr/0006-signed-helper-protocol.md), [0007](docs/adr/0007-configurable-login-approval.md), [0008](docs/adr/0008-discord-chat-approval.md)
+- ADRs: [0001](docs/adr/0001-hybrid-native-plus-docker.md), [0002](docs/adr/0002-apple-passwords-not-integrated.md), [0003](docs/adr/0003-network-level-transaction-boundary.md), [0004](docs/adr/0004-site-adapters-as-reviewed-config.md), [0005](docs/adr/0005-sqlite-node-builtin-and-no-build-step.md), [0006](docs/adr/0006-signed-helper-protocol.md), [0007](docs/adr/0007-configurable-login-approval.md), [0008](docs/adr/0008-discord-chat-approval.md), [0009](docs/adr/0009-discord-shared-bot-channel.md)

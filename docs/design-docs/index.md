@@ -13,5 +13,6 @@ The existing ADRs are the canonical decisions. Keep them in place and link new d
 | [ADR 0006](../adr/0006-signed-helper-protocol.md) | Accepted, Swift service partly verified | Signed requests and sealed credentials |
 | [ADR 0007](../adr/0007-configurable-login-approval.md) | Accepted, Swift unattended path not exercised | Per-grant login approval: native prompt, Telegram or auto |
 | [ADR 0008](../adr/0008-discord-chat-approval.md) | Accepted, not tested against Discord | Discord chat approval through reactions |
+| [ADR 0009](../adr/0009-discord-shared-bot-channel.md) | Accepted, not tested against Discord | Discord approval in a channel, through Hermes' own bot |
 
 Existing ADRs have no decision dates recorded; none are inferred here. For current crypto validation scope, prefer the [README status](../../README.md) and [limitations](../security-limitations.md) over historical untested wording in ADR 0006.

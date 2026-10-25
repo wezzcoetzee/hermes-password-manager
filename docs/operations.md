@@ -25,7 +25,7 @@ Check: `agentvault status` (compose state and token presence).
 | Situation | Behaviour |
 |---|---|
 | Mac locked or no GUI session | Helper cannot prompt: login and purchase requests return `approval_unavailable` / denial. `chat` and `auto` logins on unattended accounts skip the prompt, but may still fail while locked (unverified, see [limitations](security-limitations.md)). Existing sessions keep working until they expire |
-| Chat provider unreachable, bot not set up, or no tap or reaction within 120s | `chat` grants return `approval_unavailable`; nothing is approved. Check `agentvault audit --event login_approval` and the bot token. On Discord, also check the bot shares a server with you and may DM you |
+| Chat provider unreachable, bot not set up, or no tap or reaction within 120s | `chat` grants return `approval_unavailable`; nothing is approved. Check `agentvault audit --event login_approval` and the bot token. On Discord, also check the bot shares a server with you and may DM you, or in channel mode that it can post and react in that channel |
 | Helper not running | `helper_unavailable` (503); nothing is approved |
 | Not paired | `helper_unpaired` (503); run `agentvault pair` |
 | Docker not running | The adapter reports "AgentVault broker is unreachable. Is Docker running?" |
@@ -45,7 +45,7 @@ Event names: `agent_auth`, `policy_violation`, `session_created`, `session_expir
 
 ## Login approval modes
 
-Each grant chooses who approves its logins. Purchases always use the native prompt. See [ADR 0007](adr/0007-configurable-login-approval.md) and [ADR 0008](adr/0008-discord-chat-approval.md).
+Each grant chooses who approves its logins. Purchases always use the native prompt. See [ADR 0007](adr/0007-configurable-login-approval.md), [ADR 0008](adr/0008-discord-chat-approval.md) and [ADR 0009](adr/0009-discord-shared-bot-channel.md).
 
 | Mode | Command | Who approves |
 |---|---|---|
@@ -68,7 +68,19 @@ Only taps from that user id, in its private chat with the bot, count. If the bot
 
 ### Set up Discord approval
 
-Use a Discord application for AgentVault only, not the one Hermes uses, for the same reason. Chat approval uses one provider at a time: whichever of `chat telegram` or `chat discord` you ran last.
+Chat approval uses one provider at a time: whichever of `chat telegram` or `chat discord` you ran last. Discord works in one of two ways:
+
+- **Channel, with Hermes' bot**: the prompt appears in a channel you already use with Hermes, sent by Hermes' bot, mentioning you. Hermes holds the token, so an approval of a prompt that was edited is denied ([ADR 0009](adr/0009-discord-shared-bot-channel.md)).
+- **DM, with AgentVault's own bot**: a separate bot DMs you.
+
+For the channel:
+
+1. Make sure Hermes' bot can View Channel, Send Messages, Add Reactions and Read Message History there.
+2. Turn on Developer Mode in Discord. Copy your user id (right-click your name, Copy User ID) and the channel id (right-click the channel, Copy Channel ID).
+3. `agentvault chat discord --user-id <your id> --channel-id <channel id>` and paste Hermes' bot token at the hidden prompt. It is stored only in the broker's `settings` table.
+4. `agentvault grant <id> --approval chat`.
+
+For a DM:
 
 1. Create an application in the Discord Developer Portal, add a bot and copy its token. No privileged intents or interactions endpoint are needed; the broker only makes outbound REST calls.
 2. Invite the bot to a server you are in. A private server with just you and the bot is enough. Keep "Allow direct messages from server members" on for that server, so the bot can DM you.
@@ -76,7 +88,7 @@ Use a Discord application for AgentVault only, not the one Hermes uses, for the 
 4. `agentvault chat discord --user-id <your id>` and paste the token at the hidden prompt. It is stored only in the broker's `settings` table.
 5. `agentvault grant <id> --approval chat`.
 
-Each login sends a DM with ✅ and ❌ already added. React ✅ to approve once or ❌ to deny. Only your user id's reaction counts, and ❌ wins if both are set. With no decision in 120s the DM is marked expired and `request_login` returns `approval_unavailable`.
+Each login sends a message with ✅ and ❌ already added. React ✅ to approve once or ❌ to deny. Only your user id's reaction counts, and ❌ wins if both are set. With no decision in 120s the message is marked expired and `request_login` returns `approval_unavailable`.
 
 ## Revoking access
 

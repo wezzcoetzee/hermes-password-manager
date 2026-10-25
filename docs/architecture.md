@@ -45,7 +45,7 @@ flowchart TB
 | T2 broker to worker | Shared token (`x-av-worker-token`, constant-time compare), `core` network is `internal: true` |
 | T3 broker to helper | ECDSA-signed requests and responses, pinned keys both ways, sealed credentials, human approval |
 | T4 worker to internet | Per-session origin allowlist, private-address block, redirect vetting, transaction boundary |
-| T5 broker to chat provider | Outbound only, with AgentVault's own bot token. Telegram: long poll; a tap counts only from the configured user's private chat, for a pending request id. Discord: polls reactions on a per-request DM; only the configured user's ✅ or ❌ counts. Both expire after 120s ([ADR 0007](adr/0007-configurable-login-approval.md), [ADR 0008](adr/0008-discord-chat-approval.md)) |
+| T5 broker to chat provider | Outbound only. Telegram: AgentVault's own bot, long poll; a tap counts only from the configured user's private chat, for a pending request id. Discord: polls reactions on a per-request DM or channel message; only the configured user's ✅ or ❌ counts, and ✅ on an edited message denies. In channel mode the token may be Hermes' bot. Both expire after 120s ([ADR 0007](adr/0007-configurable-login-approval.md), [ADR 0008](adr/0008-discord-chat-approval.md), [ADR 0009](adr/0009-discord-shared-bot-channel.md)) |
 
 ## Data stored
 
@@ -59,7 +59,7 @@ SQLite at `/data/agentvault.db` (WAL), schema in `migrations/` (applied in order
 | `sessions` | id, agent, site, account, state, created/expires |
 | `transaction_approvals` | session, `summary_hash`, merchant, total, currency, status, expiry |
 | `audit_events` | ts, event, outcome, ids, JSON detail |
-| `settings` | pinned helper public key; chat provider, and the Telegram or Discord bot token and owner id when chat approval is set up |
+| `settings` | pinned helper public key; chat provider, and the Telegram or Discord bot token, owner id and optional Discord channel when chat approval is set up |
 
 Also in `broker-data`: `keys/identity.json` (broker signing and sealing private keys, mode 0600).
 
@@ -118,7 +118,7 @@ sequenceDiagram
   N-->>B: signed response, sealed credential
 ```
 
-With Discord as the chat provider ([ADR 0008](adr/0008-discord-chat-approval.md)), the broker DMs the same text, adds ✅ and ❌, and polls who reacted every 2s instead of long polling. Only the configured user's reaction counts, and ❌ wins over ✅.
+With Discord as the chat provider ([ADR 0008](adr/0008-discord-chat-approval.md)), the broker DMs the same text, or posts it in the configured channel with a mention ([ADR 0009](adr/0009-discord-shared-bot-channel.md)), adds ✅ and ❌, and polls who reacted every 2s instead of long polling. Only the configured user's reaction counts, ❌ wins over ✅, and ✅ on a message that was edited denies, because a channel bot may be Hermes' own.
 
 `auto` grants skip the chat step and audit `login_approval` `auto_approved`. Each login writes a `login_approval` row with `channel` `chat` or `auto` for the broker's decision, then one with `channel` `helper` for the helper's answer. Telegram taps from anyone else, for unknown request ids or after a decision are answered "no longer pending" and ignored. Transaction approval never uses these modes.
 
