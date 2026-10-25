@@ -38,7 +38,7 @@ flowchart LR
   BROKER <--> WORKER
   BROKER <-->|signed| HELPER
   HUMAN((User)) -->|native prompt + Touch ID| HELPER
-  HUMAN -->|Telegram tap or Discord reaction, chat grants| TG[AgentVault bot]
+  HUMAN -->|Telegram tap or Discord reaction, chat grants| TG[AgentVault bot, or Hermes' bot in a Discord channel]
   BROKER -->|poll, bot token| TG
 ```
 
