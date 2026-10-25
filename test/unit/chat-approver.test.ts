@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createDiscordApprover } from '../../src/broker/discord-approver.ts'
 import { createTelegramApprover } from '../../src/broker/telegram-approver.ts'
 import type { LoginRequest } from '../../src/shared/helper-protocol.ts'
-import { DISCORD_TOKEN, OWNER_DISCORD_ID, startFakeDiscord } from '../fake-discord.ts'
+import { DISCORD_TOKEN, OWNER_DISCORD_ID, SHARED_CHANNEL, startFakeDiscord } from '../fake-discord.ts'
 import { OWNER_CHAT_ID, TELEGRAM_TOKEN, startFakeTelegram, waitFor } from '../fake-telegram.ts'
 
 const log = pino({ level: 'silent' })
@@ -34,13 +34,13 @@ describe('telegram approver', () => {
 })
 
 describe('discord approver', () => {
-  const approver = (timeoutMs = 5000, apiBase = discord.url) =>
-    createDiscordApprover({ log, apiBase, timeoutMs, pollMs: 10, config: () => ({ token: DISCORD_TOKEN, userId: OWNER_DISCORD_ID }) })
+  const approver = (timeoutMs = 5000, apiBase = discord.url, channelId?: string) =>
+    createDiscordApprover({ log, apiBase, timeoutMs, pollMs: 10, config: () => ({ token: DISCORD_TOKEN, userId: OWNER_DISCORD_ID, channelId }) })
 
-  /** Starts an approval and waits until its DM is sent with both reactions in place. Wrapped so awaiting this does not await the decision. */
-  async function prompt(timeoutMs?: number) {
+  /** Starts an approval and waits until its message is sent with both reactions in place. Wrapped so awaiting this does not await the decision. */
+  async function prompt(timeoutMs?: number, channelId?: string) {
     const sent = discord.sent.length
-    const decision = approver(timeoutMs).approveLogin(request)
+    const decision = approver(timeoutMs, discord.url, channelId).approveLogin(request)
     await waitFor(() => discord.sent.length > sent && discord.reactionsOnLatest()['❌']?.length === 1)
     return { decision }
   }
@@ -68,6 +68,24 @@ describe('discord approver', () => {
   it('expires to unavailable when nobody reacts, and says so in the DM', async () => {
     expect(await (await prompt(200)).decision).toBe('unavailable')
     await expect.poll(() => discord.edits.at(-1)).toMatch(/Expired\. Nothing was approved\.$/)
+  })
+
+  it('posts in the configured channel instead of a DM, mentioning only the owner', async () => {
+    const dms = discord.dmRecipients.length
+    const { decision } = await prompt(undefined, SHARED_CHANNEL)
+    expect(discord.dmRecipients).toHaveLength(dms)
+    expect(discord.channels.at(-1)).toBe(SHARED_CHANNEL)
+    expect(discord.sent.at(-1)).toMatch(new RegExp(`^<@${OWNER_DISCORD_ID}> AgentVault:`))
+    expect(discord.mentions.at(-1)).toEqual({ users: [OWNER_DISCORD_ID] })
+    discord.react('approve')
+    expect(await decision).toBe('approved')
+  })
+
+  it('denies an approval of a prompt someone else with the token edited', async () => {
+    const { decision } = await prompt(undefined, SHARED_CHANNEL)
+    discord.tamper()
+    discord.react('approve')
+    expect(await decision).toBe('denied')
   })
 
   it('fails closed when the Discord API is unreachable', async () => {

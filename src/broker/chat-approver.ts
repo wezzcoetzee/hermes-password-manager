@@ -1,8 +1,8 @@
 /**
- * Login approval in chat, through a bot that belongs to AgentVault rather than Hermes.
- * Each provider fetches the decision itself, with a bot token the agent never sees, and counts it
- * only when it comes from the configured user. No agent tool reaches this path, so the agent
- * cannot approve its own request. See ADR 0007 and ADR 0008.
+ * Login approval in chat. Each provider fetches the decision itself and counts it only when it comes
+ * from the configured user. No agent tool reaches this path, so the agent cannot approve its own
+ * request. Telegram uses AgentVault's own bot; Discord may reuse Hermes' bot in a channel, where an
+ * edited prompt is denied. See ADR 0007, ADR 0008 and ADR 0009.
  */
 import type { Decision, LoginRequest } from '../shared/helper-protocol.ts'
 

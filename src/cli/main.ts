@@ -37,7 +37,7 @@ const { values, positionals } = parseArgs({
   args: rest, allowPositionals: true, strict: false,
   options: {
     site: { type: 'string' }, username: { type: 'string' }, label: { type: 'string' }, transactions: { type: 'boolean' }, agent: { type: 'string' },
-    approval: { type: 'string' }, 'chat-id': { type: 'string' }, 'user-id': { type: 'string' },
+    approval: { type: 'string' }, 'chat-id': { type: 'string' }, 'user-id': { type: 'string' }, 'channel-id': { type: 'string' },
   },
 })
 
@@ -139,8 +139,11 @@ switch (command) {
   }
   case 'chat discord': {
     const userId = values['user-id']
-    if (typeof userId !== 'string') throw new Error('Usage: agentvault chat discord --user-id <your numeric Discord user id>')
-    console.log(admin(['chat-discord', '--user-id', userId], await ask('AgentVault bot token (hidden): ', true)))
+    const channelId = typeof values['channel-id'] === 'string' ? values['channel-id'] : undefined
+    if (typeof userId !== 'string') throw new Error('Usage: agentvault chat discord --user-id <your numeric Discord user id> [--channel-id <channel to post in>]')
+    // With a channel, the token may be Hermes' own bot (ADR 0009).
+    const args = ['chat-discord', '--user-id', userId, ...(channelId ? ['--channel-id', channelId] : [])]
+    console.log(admin(args, await ask(`${channelId ? 'Discord' : 'AgentVault'} bot token (hidden): `, true)))
     break
   }
   case 'audit':
@@ -164,7 +167,8 @@ switch (command) {
                                                      login approval: prompt (default), chat or auto
   revoke <id> [--agent name]                         remove that permission
   chat telegram --chat-id <id>                       set up AgentVault's own Telegram bot for chat approvals
-  chat discord --user-id <id>                        or its own Discord bot; the one set up last is used
+  chat discord --user-id <id> [--channel-id <id>]    or Discord: DMs from AgentVault's bot, or posts in a channel,
+                                                     where Hermes' bot may be reused; the one set up last is used
   audit [--event e] [--limit n] [--json]             show audit events
   sessions | accounts | grants | status`)
 }

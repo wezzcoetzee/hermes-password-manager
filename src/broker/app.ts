@@ -3,7 +3,7 @@ import type { Logger } from '../shared/logger.ts'
 import type { Site } from '../shared/sites.ts'
 import { createAudit } from './audit.ts'
 import type { ChatApprover } from './chat-approver.ts'
-import { CHAT_PROVIDER_SETTING, DISCORD_TOKEN_SETTING, DISCORD_USER_SETTING, HELPER_KEY_SETTING, TELEGRAM_CHAT_SETTING, TELEGRAM_TOKEN_SETTING } from './config.ts'
+import { CHAT_PROVIDER_SETTING, DISCORD_CHANNEL_SETTING, DISCORD_TOKEN_SETTING, DISCORD_USER_SETTING, HELPER_KEY_SETTING, TELEGRAM_CHAT_SETTING, TELEGRAM_TOKEN_SETTING } from './config.ts'
 import { getSetting, type Db } from './db.ts'
 import { createDiscordApprover } from './discord-approver.ts'
 import { createHelperClient } from './helper-client.ts'
@@ -44,7 +44,7 @@ export function createBrokerApp({ db, identity, sites, helperUrl, workerUrl, wor
     config() {
       const token = getSetting(db, DISCORD_TOKEN_SETTING)
       const userId = getSetting(db, DISCORD_USER_SETTING)
-      return token && userId ? { token, userId } : undefined
+      return token && userId ? { token, userId, channelId: getSetting(db, DISCORD_CHANNEL_SETTING) } : undefined
     },
   })
   // Installs set up before Discord support have no provider setting and use Telegram.

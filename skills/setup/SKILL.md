@@ -66,11 +66,13 @@ Ask how the user wants to approve this account's login requests, and explain the
 
 Ask whether a bot was already set up for an earlier account; if so, skip this. Running either command again replaces the active provider. Otherwise ask: Telegram or Discord? Only one is active, whichever was set up last. Walk the user through the matching steps in [Set up Telegram approval](../../docs/operations.md#set-up-telegram-approval) or [Set up Discord approval](../../docs/operations.md#set-up-discord-approval), one step at a time.
 
-- It must be a bot used only by AgentVault, never the one Hermes uses; otherwise the agent could approve itself.
+- Telegram must use a bot used only by AgentVault, never the one Hermes uses.
+- Discord can either post in a channel the user already shares with Hermes, using Hermes' own bot, or DM from a bot used only by AgentVault. Ask which they prefer; the channel needs a channel id.
 - The user pastes the bot token into a hidden prompt. **Never ask for the token in chat or pass it as an argument.** Have the user run the command in their own terminal:
   - Telegram: `agentvault chat telegram --chat-id <numeric user id>`
-  - Discord: `agentvault chat discord --user-id <user id>`
-- The user id is not secret; you may help them find it.
+  - Discord in a channel: `agentvault chat discord --user-id <user id> --channel-id <channel id>`
+  - Discord by DM: `agentvault chat discord --user-id <user id>`
+- The user and channel ids are not secret; you may help them find them.
 
 ### 4.4 Grant
 

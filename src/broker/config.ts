@@ -36,9 +36,11 @@ export function openBrokerState() {
 }
 
 export const HELPER_KEY_SETTING = 'helper_public_key'
-/** AgentVault's own bot for chat login approvals; never Hermes' bot. The provider set up last is active. */
+/** Bot for chat login approvals. The provider set up last is active. Telegram's must be AgentVault's own; Discord may reuse Hermes' bot when it posts in a channel (ADR 0009). */
 export const CHAT_PROVIDER_SETTING = 'chat_provider'
 export const TELEGRAM_TOKEN_SETTING = 'telegram_bot_token'
 export const TELEGRAM_CHAT_SETTING = 'telegram_chat_id'
 export const DISCORD_TOKEN_SETTING = 'discord_bot_token'
 export const DISCORD_USER_SETTING = 'discord_user_id'
+/** Optional; without it the bot DMs the user. */
+export const DISCORD_CHANNEL_SETTING = 'discord_channel_id'
