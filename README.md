@@ -22,7 +22,7 @@ flowchart LR
   B -- "signed HTTP<br/>host.docker.internal:47800" --> N[Native Swift helper<br/>host, LaunchAgent]
   N <--> K[(macOS Keychain)]
   N <--> P[Native prompt + Touch ID]
-  B -- "chat approvals<br/>(own bot)" --> C[Telegram or Discord]
+  B -- "chat approvals<br/>(own bot, or Hermes' bot<br/>in a Discord channel)" --> C[Telegram or Discord]
   W -- allowlisted origins only --> S[(Merchant sites)]
 ```
 
