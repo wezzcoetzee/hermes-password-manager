@@ -2,7 +2,7 @@
 import { z } from 'zod'
 import { orderSummarySchema } from './sites.ts'
 
-export const decisionSchema = z.enum(['approved', 'denied', 'unavailable'])
+const decisionSchema = z.enum(['approved', 'denied', 'unavailable'])
 export type Decision = z.infer<typeof decisionSchema>
 
 export const loginRequestSchema = z.object({

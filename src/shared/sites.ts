@@ -64,9 +64,8 @@ export function loadSites(dir: string): Map<string, Site> {
 
 export const siteOrigins = (site: Site) => [site.origin, ...site.extraOrigins]
 
-/** Order summary as read from the merchant's checkout page by the browser worker. */
 /**
- * Bounded and free of control/format characters (bidi overrides, zero-width), so a page cannot pad
+ * Order summary as read from the merchant's checkout page. Bounded and free of control/format characters (bidi overrides, zero-width), so a page cannot pad
  * the native prompt or make it display something other than what is hashed. Out-of-bounds values
  * are rejected, not truncated, so the hash always covers exactly what the user saw.
  */

@@ -1,6 +1,6 @@
 /** Internal contract between the broker and the browser worker. Never exposed to agents. */
 import { z } from 'zod'
-import { siteSchema } from './sites.ts'
+import { siteSchema, type OrderSummary } from './sites.ts'
 
 export const WORKER_TOKEN_HEADER = 'x-av-worker-token'
 
@@ -23,6 +23,17 @@ export const actionSchema = z.object({
   ]),
 })
 export type WorkerAction = z.infer<typeof actionSchema>['action']
+
+export interface ActionResult {
+  url: string
+  title: string
+  blocked?: { url: string; reason: string }[]
+  transaction?: { status: 'submitted' | 'blocked'; reason: string }
+  snapshot?: unknown
+  screenshot?: string
+  orderSummary?: OrderSummary
+  summaryHash?: string
+}
 
 /** Broker endpoint the worker calls when it intercepts an order submission. */
 export const consumeSchema = z.object({ sessionId: z.string(), summaryHash: z.string() })

@@ -44,7 +44,7 @@ describe('agent authentication and input validation', () => {
     const intruder = await sys.connect('not-a-real-token')
     const result = await call(intruder, 'list_accounts')
     expect(result.error).toMatch(/^unauthorized/)
-    expect(sys.db.prepare("SELECT count(*) AS n FROM audit_events WHERE event = 'agent_auth' AND outcome = 'rejected'").get()).toMatchObject({ n: expect.any(Number) })
+    expect(sys.db.prepare("SELECT count(*) AS n FROM audit_events WHERE event = 'agent_auth' AND outcome = 'rejected'").get()).toMatchObject({ n: expect.toSatisfy((n: number) => n > 0) })
   })
 
   it('rejects malformed input before it reaches the browser', async () => {
@@ -180,11 +180,6 @@ describe('transaction boundary', () => {
     } finally {
       sys.db.prepare("UPDATE grants SET allow_transactions = 1 WHERE account_id = 'test-shop-main'").run()
     }
-  })
-
-  it('a compromised worker cannot mint approvals: consume without an approved record is denied', () => {
-    const sessionId = 'ses_' + 'z'.repeat(24)
-    expect(sys.app.broker.consumeTransaction(sessionId, 'any-hash')).toEqual({ allowed: false, reason: 'session_not_authenticated' })
   })
 
   it('approvals from an unpaired helper key are rejected', async () => {

@@ -19,7 +19,7 @@ import { TEST_USER, createShop } from '../mock-shop/shop.ts'
 import { DISCORD_TOKEN, OWNER_DISCORD_ID, startFakeDiscord } from './fake-discord.ts'
 import { OWNER_CHAT_ID, TELEGRAM_TOKEN, startFakeTelegram } from './fake-telegram.ts'
 
-export const AGENT_TOKEN = 'test-agent-token-' + 'x'.repeat(20)
+const AGENT_TOKEN = 'test-agent-token-' + 'x'.repeat(20)
 export const OTHER_AGENT_TOKEN = 'other-agent-token-' + 'y'.repeat(20)
 const WORKER_TOKEN = 'worker-token-for-tests'
 
@@ -91,7 +91,7 @@ export async function startSystem() {
   }
 
   return {
-    origin, manualOrigin, shop, db, app, helper, credentials, decisions, telegram, discord, brokerUrl, logLines, connect,
+    origin, manualOrigin, shop, db, app, helper, credentials, decisions, telegram, discord, logLines, connect,
     async stop() {
       await worker.shutdown()
       app.stop()
@@ -126,9 +126,8 @@ export async function call(client: Client, name: string, args: Record<string, un
   return { data: JSON.parse(text) as ToolData, raw, error: undefined, image: content.find((c) => c.type === 'image')?.data }
 }
 
-/** Finds an element ref in a snapshot by role and name. */
-export function ref(snapshot: Pick<ToolData, 'elements'>, role: string, name: string | RegExp): string {
-  const match = snapshot.elements.find((e) => e.role === role && (typeof name === 'string' ? e.name === name : name.test(e.name)))
+export function ref(snapshot: Pick<ToolData, 'elements'>, role: string, name: string): string {
+  const match = snapshot.elements.find((e) => e.role === role && e.name === name)
   if (!match) throw new Error(`No ${role} "${name}" in snapshot: ${JSON.stringify(snapshot.elements.map((e) => `${e.role}:${e.name}`))}`)
   return match.ref
 }
