@@ -87,7 +87,6 @@ export async function createWorker(options: WorkerOptions) {
 
   return {
     server,
-    sessions,
     async shutdown() {
       await Promise.all([...sessions.keys()].map(close))
       await browser.close()

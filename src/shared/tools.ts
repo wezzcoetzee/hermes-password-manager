@@ -74,4 +74,3 @@ export const toolDefinitions = {
 
 export type ToolName = keyof typeof toolDefinitions
 export type ToolInput<T extends ToolName> = z.infer<(typeof toolDefinitions)[T]['input']>
-export const isToolName = (name: string): name is ToolName => Object.hasOwn(toolDefinitions, name)

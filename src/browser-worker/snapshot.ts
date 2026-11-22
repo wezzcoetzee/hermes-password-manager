@@ -1,5 +1,4 @@
-/** Runs inside the page. Must stay self-contained: Playwright serialises it. */
-export interface RawElement {
+interface RawElement {
   ref: string
   role: string
   name: string
@@ -12,8 +11,9 @@ export interface RawElement {
   disabled?: boolean
 }
 
-export interface RawSnapshot { title: string; url: string; text: string; elements: RawElement[] }
+interface RawSnapshot { title: string; url: string; text: string; elements: RawElement[] }
 
+/** Runs inside the page. Must stay self-contained: Playwright serialises it. */
 export function collectSnapshot(refAttr: string): RawSnapshot {
   const visible = (el: Element) => {
     const style = getComputedStyle(el)

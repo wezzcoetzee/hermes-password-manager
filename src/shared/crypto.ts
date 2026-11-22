@@ -12,7 +12,7 @@ import {
   generateKeyPairSync, hkdfSync, randomBytes, sign, verify, type KeyObject,
 } from 'node:crypto'
 
-export const SEAL_INFO = 'agentvault/credential/v1'
+const SEAL_INFO = 'agentvault/credential/v1'
 export const MAX_CLOCK_SKEW_MS = 30_000
 
 export interface KeyPairPem { privateKey: string; publicKey: string }

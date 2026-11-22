@@ -40,13 +40,13 @@ export function parseJson(raw: string): unknown {
   }
 }
 
-export function sendJson(res: ServerResponse, status: number, body: unknown): void {
+function sendJson(res: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body)
   res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' })
   res.end(payload)
 }
 
-export type Route = (req: IncomingMessage, body: string, url: URL) => Promise<unknown>
+export type Route = (req: IncomingMessage, body: string) => Promise<unknown>
 
 /**
  * Minimal JSON router. Every handler returns a JSON-serialisable value or throws
@@ -59,7 +59,7 @@ export function jsonServer(routes: Record<string, Route>, onError: (err: unknown
       if (req.method === 'GET' && url.pathname === '/healthz') return sendJson(res, 200, { ok: true })
       const route = routes[`${req.method} ${url.pathname}`]
       if (!route) throw new HttpError(404, 'not_found', 'Unknown endpoint')
-      sendJson(res, 200, await route(req, await readBody(req), url))
+      sendJson(res, 200, await route(req, await readBody(req)))
     } catch (err) {
       if (err instanceof HttpError) return sendJson(res, err.status, { error: err.code, message: err.message })
       onError(err)

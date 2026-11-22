@@ -14,8 +14,8 @@ import type { ChatApprover } from './chat-approver.ts'
 import type { HelperClient } from './helper-client.ts'
 import type { WorkerClient } from './worker-client.ts'
 
-export const ANONYMOUS_SESSION_MINUTES = 30
-export const TRANSACTION_APPROVAL_TTL_MS = 120_000
+const ANONYMOUS_SESSION_MINUTES = 30
+const TRANSACTION_APPROVAL_TTL_MS = 120_000
 const LIVE_STATES = new Set(['anonymous', 'authenticated'])
 
 export interface BrokerDeps { db: Db; sites: Map<string, Site>; helper: HelperClient; chat: ChatApprover; worker: WorkerClient; audit: Audit; now?: () => number }
@@ -168,7 +168,7 @@ export function createBroker({ db, sites, helper, chat, worker, audit, now = Dat
         if (!site) throw forbidden(agent, `Origin ${origin} is not allowlisted for this agent`, { detail: { origin } })
         sessionId = await openSession(agent, site)
       }
-    const session = liveSession(agent, sessionId)
+      const session = liveSession(agent, sessionId)
       if (!siteOrigins(siteFor(session.site_id)).includes(origin)) throw forbidden(agent, `Origin ${origin} is not allowed in this session`, { sessionId, detail: { origin } })
       return { sessionId, ...(await act(agent, session, { type: 'navigate', url })) }
     },
@@ -176,7 +176,6 @@ export function createBroker({ db, sites, helper, chat, worker, audit, now = Dat
     request_login: (agent, input) => withPrompt(input.sessionId, () => requestLogin(agent, input)),
     // Purchases always go to the native prompt, whatever the grant's login approval mode.
     request_transaction_approval: (agent, input) => withPrompt(input.sessionId, () => requestTransactionApproval(agent, input)),
-
 
     async get_session_status(agent, { sessionId }) {
       const row = db.prepare('SELECT * FROM sessions WHERE id = ? AND agent_id = ?').get(sessionId, agent.id) as SessionRow | undefined

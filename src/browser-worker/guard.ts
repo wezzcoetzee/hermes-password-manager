@@ -38,7 +38,7 @@ export async function resolvesToPrivate(hostname: string): Promise<boolean> {
 }
 
 /** Lenient servers route /Checkout/Place-Order/;x=1 to /checkout/place-order, so the guard must too. */
-export function normalisePath(pathname: string): string {
+function normalisePath(pathname: string): string {
   let path = pathname.split(';')[0] ?? ''
   try {
     path = decodeURIComponent(path)

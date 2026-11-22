@@ -3,29 +3,18 @@ import type { Browser, BrowserContext, Page, Route } from 'playwright'
 import { sha256 } from '../shared/ids.ts'
 import type { Logger } from '../shared/logger.ts'
 import { orderSummarySchema, type OrderSummary, type Site } from '../shared/sites.ts'
-import type { WorkerAction } from '../shared/worker-protocol.ts'
+import type { ActionResult, WorkerAction } from '../shared/worker-protocol.ts'
 import { createGuard, type Verdict } from './guard.ts'
 import { UNTRUSTED_NOTICE, injectionWarnings, scrub, truncate } from './sanitize.ts'
 import { collectSnapshot } from './snapshot.ts'
 
 export type ConsumeApproval = (sessionId: string, summaryHash: string) => Promise<{ allowed: boolean; reason: string }>
 
-interface Blocked { url: string; reason: string }
-interface TransactionEvent { status: 'submitted' | 'blocked'; reason: string }
-
-export interface ActionResult {
-  url: string
-  title: string
-  blocked?: Blocked[]
-  transaction?: TransactionEvent
-  snapshot?: unknown
-  screenshot?: string
-  orderSummary?: OrderSummary
-  summaryHash?: string
-}
+type Blocked = NonNullable<ActionResult['blocked']>[number]
+type TransactionEvent = NonNullable<ActionResult['transaction']>
 
 /** Canonical hash of what the user is shown, so approval binds to the exact order. */
-export const hashSummary = (summary: OrderSummary) => sha256(JSON.stringify(orderSummarySchema.parse(summary)))
+const hashSummary = (summary: OrderSummary) => sha256(JSON.stringify(orderSummarySchema.parse(summary)))
 
 export class BrowserSession {
   readonly id: string

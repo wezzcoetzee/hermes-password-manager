@@ -10,7 +10,7 @@ export const TEST_USER = { email: 'shopper@example.test', password: 'correct-hor
 
 interface Product { id: string; name: string; colours: string[]; sizes: string[]; price: number }
 interface Line { productId: string; colour: string; size: string; quantity: number }
-export interface Order { id: string; email: string; lines: Line[]; total: string }
+interface Order { id: string; email: string; lines: Line[]; total: string }
 
 const PRODUCTS: Product[] = [
   { id: 'abc-pant', name: 'ABC Classic Pant', colours: ['Black', 'Navy', 'Grey'], sizes: ['28', '30', '32', '34', '36'], price: 128 },

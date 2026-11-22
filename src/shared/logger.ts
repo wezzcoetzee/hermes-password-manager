@@ -14,8 +14,7 @@ export function createLogger(name: string): Logger {
     name,
     level: process.env.LOG_LEVEL ?? 'info',
     redact: { paths: REDACT, censor: '[redacted]' },
-    // stdio MCP servers must keep stdout clean for the protocol.
-  }, pino.destination(name === 'mcp-adapter' ? 2 : 1))
+  }, pino.destination(1))
 }
 
 export type { Logger }
