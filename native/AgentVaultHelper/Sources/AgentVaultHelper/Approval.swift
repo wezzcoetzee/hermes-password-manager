@@ -27,10 +27,13 @@ enum Approval {
         return flat.count > 120 ? String(flat.prefix(120)) + "…" : flat
     }
 
-    /// Call from a background queue. Blocks until the user decides or the prompt times out.
+    /// Call from a background queue. Blocks until the user decides or the prompt times out. Touch ID is
+    /// bounded too: requests are served one at a time, so a sheet left open would otherwise stall every
+    /// later request and could approve one the broker has already given up on (it waits 130s).
     static func ask(title: String, rows: [(String, String)], approveLabel: String, reason: String) -> Decision {
         guard userPresent() else { return .unavailable }
-        let clicked: Bool = DispatchQueue.main.sync {
+        let deadline = Date().addingTimeInterval(timeout)
+        let choice: Decision = DispatchQueue.main.sync {
             let alert = NSAlert()
             alert.messageText = title
             alert.informativeText = rows.map { "\($0.0): \(clean($0.1))" }.joined(separator: "\n")
@@ -41,13 +44,19 @@ enum Approval {
             let timer = Timer(timeInterval: timeout, repeats: false) { _ in NSApp.abortModal() }
             RunLoop.main.add(timer, forMode: .modalPanel)
             defer { timer.invalidate() }
-            return alert.runModal() == .alertSecondButtonReturn
+            switch alert.runModal() {
+            case .alertSecondButtonReturn: return .approved
+            case .abort: return .unavailable // nobody answered
+            default: return .denied
+            }
         }
-        guard clicked else { return .denied }
-        return authenticate(reason: reason) ? .approved : .denied
+        guard choice == .approved else { return choice }
+        // A click just before the deadline still gets a few seconds for Touch ID, within the broker's wait.
+        return authenticate(reason: reason, until: max(deadline, Date().addingTimeInterval(8))) ? .approved : .denied
     }
 
-    static func authenticate(reason: String) -> Bool {
+    /// Device-owner authentication. With a deadline, an unanswered sheet is dismissed and counts as a failure.
+    static func authenticate(reason: String, until deadline: Date? = nil) -> Bool {
         let context = LAContext()
         var error: NSError?
         guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else { return false }
@@ -57,7 +66,15 @@ enum Approval {
             ok = success
             done.signal()
         }
-        done.wait()
+        guard let deadline else {
+            done.wait()
+            return ok
+        }
+        if done.wait(wallTimeout: .now() + max(0, deadline.timeIntervalSinceNow)) == .timedOut {
+            context.invalidate() // closes the sheet; the reply then arrives as a failure
+            done.wait()
+            return false
+        }
         return ok
     }
 

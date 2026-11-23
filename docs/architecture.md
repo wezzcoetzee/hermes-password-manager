@@ -95,7 +95,7 @@ sequenceDiagram
   B-->>H: authenticated, expiresAt
 ```
 
-Denied or `unavailable` (no GUI, locked, timeout) answers return `denied` or `approval_unavailable`, and the session stays anonymous. A bad signature or mismatched request id raises an error and counts as denied.
+Denied or `unavailable` (no GUI, locked, timeout) answers return `denied` or `approval_unavailable`, and the session stays anonymous. A bad signature or mismatched request id raises an error and counts as denied. The helper's Touch ID step shares the prompt's 120s deadline, with 8s of grace after a late click, so one prompt never stays open past the broker's 130s wait. The helper answers one request at a time; one queued behind another for more than 30s is rejected as stale rather than prompted.
 
 ### Login approval modes
 
