@@ -6,7 +6,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { HttpError, postJson } from '../shared/http.ts'
-import { toolDefinitions, type ToolName } from '../shared/tools.ts'
+import { APPROVAL_TOOL_TIMEOUT_MS, toolDefinitions, type ToolName } from '../shared/tools.ts'
 
 export interface AdapterOptions { brokerUrl: string; agentToken: string }
 
@@ -20,13 +20,16 @@ export function createMcpServer({ brokerUrl, agentToken }: AdapterOptions): McpS
     const { description, input } = toolDefinitions[name]
     server.registerTool(name, { description, inputSchema: input.shape }, async (args: Record<string, unknown>): Promise<CallToolResult> => {
       try {
-        const result = await postJson<Record<string, unknown>>(`${brokerUrl}/v1/tools/${name}`, args, { authorization: `Bearer ${agentToken}` }, SLOW_TOOLS.has(name) ? 180_000 : 60_000)
+        const result = await postJson<Record<string, unknown>>(`${brokerUrl}/v1/tools/${name}`, args, { authorization: `Bearer ${agentToken}` }, SLOW_TOOLS.has(name) ? APPROVAL_TOOL_TIMEOUT_MS : 60_000)
         const { screenshot, ...rest } = result
         const content: CallToolResult['content'] = [{ type: 'text', text: JSON.stringify(rest, null, 2) }]
         if (typeof screenshot === 'string') content.push({ type: 'image', data: screenshot, mimeType: 'image/png' })
         return { content }
       } catch (err) {
-        const message = err instanceof HttpError ? `${err.code}: ${err.message}` : 'AgentVault broker is unreachable. Is Docker running?'
+        const message = err instanceof HttpError ? `${err.code}: ${err.message}`
+          // The broker carries on after the adapter gives up, so the request may still complete.
+          : err instanceof DOMException && err.name === 'TimeoutError' ? 'timeout: AgentVault did not answer in time. The request may still complete; check get_session_status or get_transaction_status before retrying.'
+          : 'AgentVault broker is unreachable. Is Docker running?'
         return { isError: true, content: [{ type: 'text', text: message }] }
       }
     })

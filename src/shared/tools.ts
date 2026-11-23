@@ -3,6 +3,8 @@
  * early rejection) and the broker (the authoritative validator).
  */
 import { z } from 'zod'
+import { APPROVAL_TIMEOUT_MS, HELPER_TIMEOUT_MS } from './helper-protocol.ts'
+import { WORKER_TIMEOUT_MS } from './worker-protocol.ts'
 
 const sessionId = z.string().regex(/^ses_[A-Za-z0-9_-]{24}$/, 'must be an opaque session id')
 const approvalId = z.string().regex(/^txn_[A-Za-z0-9_-]{24}$/, 'must be an opaque approval id')
@@ -71,6 +73,14 @@ export const toolDefinitions = {
     input: z.object({ approvalId }),
   },
 } as const satisfies Record<string, { description: string; input: z.ZodObject }>
+
+/**
+ * Budget for the tools that wait on a person: a chat approval, then the helper's own prompt when the
+ * account is not marked unattended, then one worker call. Node's fetch gives up on response headers at
+ * 300s, so this cannot grow much. An unusually slow sign-in on top of two full waits can still outlast
+ * it; the broker finishes anyway and the adapter says so. MCP clients must allow at least this long.
+ */
+export const APPROVAL_TOOL_TIMEOUT_MS = APPROVAL_TIMEOUT_MS + HELPER_TIMEOUT_MS + WORKER_TIMEOUT_MS
 
 export type ToolName = keyof typeof toolDefinitions
 export type ToolInput<T extends ToolName> = z.infer<(typeof toolDefinitions)[T]['input']>

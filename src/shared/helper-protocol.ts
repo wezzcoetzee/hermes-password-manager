@@ -40,3 +40,5 @@ export const signedResponseSchema = z.object({ payload: z.string(), signature: z
 export const HELPER_PATHS = { login: '/v1/login', transaction: '/v1/transaction' } as const
 /** How long the user has to decide before the request is treated as denied. */
 export const APPROVAL_TIMEOUT_MS = 120_000
+/** The broker's wait for the helper: the prompt plus room for signing and Touch ID to finish. */
+export const HELPER_TIMEOUT_MS = APPROVAL_TIMEOUT_MS + 10_000

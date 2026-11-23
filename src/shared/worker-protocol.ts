@@ -3,6 +3,8 @@ import { z } from 'zod'
 import { siteSchema, type OrderSummary } from './sites.ts'
 
 export const WORKER_TOKEN_HEADER = 'x-av-worker-token'
+/** The broker's wait for one worker call, sign-in included. */
+export const WORKER_TIMEOUT_MS = 45_000
 
 export const openSessionSchema = z.object({ sessionId: z.string(), site: siteSchema, expiresAt: z.number() })
 export const loginSchema = z.object({ sessionId: z.string(), username: z.string(), password: z.string() })

@@ -14,7 +14,7 @@ Verified from local source at `~/.hermes/hermes-agent` commit `b34ee8074`: `tool
 - Hermes has its own browser toolset (`tools/browser_tool.py`, `agent-browser` CLI, local Chromium or Browserbase/Browser Use cloud). It is independent of AgentVault and has no access to AgentVault sessions. Toolsets are configurable per platform via `platform_toolsets`; to force browsing through AgentVault, disable the built-in browser toolset there.
 - Skills are supported (`~/.hermes/skills`).
 
-**Recommendation:** `timeout` of at least 180 for the server. The adapter waits up to 180s on `request_login` and `request_transaction_approval`, and the helper prompt expires after 120s. The example uses 200.
+**Recommendation:** `timeout` of at least 300 for the server. The adapter waits up to 295s on `request_login` and `request_transaction_approval`: a 120s chat approval, the helper's own prompt when the account is not unattended, then the sign-in. The example uses 320.
 
 ## Apple Passwords
 

@@ -17,7 +17,7 @@ const { values, positionals } = parseArgs({
   allowPositionals: true,
   options: {
     site: { type: 'string' }, username: { type: 'string' }, label: { type: 'string' }, 'max-minutes': { type: 'string' },
-    transactions: { type: 'boolean', default: false }, approval: { type: 'string', default: 'prompt' }, 'chat-id': { type: 'string' }, 'user-id': { type: 'string' }, 'channel-id': { type: 'string' }, limit: { type: 'string', default: '50' }, event: { type: 'string' }, json: { type: 'boolean', default: false },
+    transactions: { type: 'boolean', default: false }, approval: { type: 'string', default: 'prompt' }, 'chat-id': { type: 'string' }, 'user-id': { type: 'string' }, 'channel-id': { type: 'string' }, limit: { type: 'string', default: '50' }, event: { type: 'string' }, json: { type: 'boolean', default: false }, days: { type: 'string' },
   },
 })
 const { db, identity, sites } = openBrokerState()
@@ -27,6 +27,8 @@ const fail = (message: string): never => {
   process.exit(1)
 }
 const need = (value: string | undefined, name: string) => value ?? fail(`Missing ${name}`)
+const positiveInt = (value: string, name: string) => (/^[1-9]\d{0,5}$/.test(value) ? Number(value) : fail(`${name} must be a positive whole number`))
+const printRows = (rows: unknown[]) => (values.json ? console.log(JSON.stringify(rows, null, 2)) : console.table(rows))
 
 switch (command) {
   case 'agent-add': {
@@ -37,6 +39,7 @@ switch (command) {
     break
   }
   case 'agent-disable':
+    // The broker ends the agent's live sessions on its next sweep.
     db.prepare('UPDATE agents SET disabled = 1 WHERE name = ?').run(need(positionals[0], '<name>'))
     break
   case 'account-add': {
@@ -44,16 +47,16 @@ switch (command) {
     const site = need(values.site, '--site')
     if (!sites.has(site)) fail(`Unknown site ${site}. Known: ${[...sites.keys()].join(', ')}`)
     db.prepare('INSERT INTO accounts (id, site_id, username, label, max_session_minutes, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(id, site, need(values.username, '--username'), values.label ?? id, Number(values['max-minutes'] ?? 60), now)
+      .run(id, site, need(values.username, '--username'), values.label ?? id, positiveInt(values['max-minutes'] ?? '60', '--max-minutes'), now)
     console.log(JSON.stringify({ id, origin: sites.get(site)?.origin }))
     break
   }
   case 'account-remove': {
     // Sessions keep their history but must stop referencing the account, or the foreign key blocks the delete.
+    // A signed-in session left without an account is revoked, and its browser closed, by the broker.
     const id = need(positionals[0], '<account-id>')
     db.exec('BEGIN')
     try {
-      db.prepare("UPDATE sessions SET state = 'revoked' WHERE account_id = ? AND state IN ('anonymous', 'authenticated')").run(id)
       db.prepare('UPDATE sessions SET account_id = NULL WHERE account_id = ?').run(id)
       db.prepare('DELETE FROM accounts WHERE id = ?').run(id)
       db.exec('COMMIT')
@@ -74,7 +77,7 @@ switch (command) {
     break
   }
   case 'grants':
-    console.table(db.prepare('SELECT ag.name AS agent, g.account_id, g.allow_transactions, g.approval FROM grants g JOIN agents ag ON ag.id = g.agent_id ORDER BY ag.name, g.account_id').all())
+    printRows(db.prepare('SELECT ag.name AS agent, g.account_id, g.allow_transactions, g.approval FROM grants g JOIN agents ag ON ag.id = g.agent_id ORDER BY ag.name, g.account_id').all())
     break
   case 'chat-telegram': {
     const chatId = need(values['chat-id'], '--chat-id')
@@ -103,6 +106,7 @@ switch (command) {
     break
   }
   case 'revoke-grant':
+    // The broker revokes sessions signed in through this grant on the next tool call or sweep.
     db.prepare('DELETE FROM grants WHERE agent_id = (SELECT id FROM agents WHERE name = ?) AND account_id = ?').run(need(positionals[0], '<agent>'), need(positionals[1], '<account-id>'))
     break
   case 'pubkeys':
@@ -126,15 +130,21 @@ switch (command) {
     break
   case 'audit': {
     const rows = db.prepare(`SELECT datetime(ts / 1000, 'unixepoch') AS time, event, outcome, agent_id, session_id, account_id, detail FROM audit_events
-      ${values.event ? 'WHERE event = ?' : ''} ORDER BY id DESC LIMIT ?`).all(...(values.event ? [values.event] : []), Number(values.limit))
-    if (values.json) console.log(JSON.stringify(rows, null, 2))
-    else console.table(rows)
+      ${values.event ? 'WHERE event = ?' : ''} ORDER BY id DESC LIMIT ?`).all(...(values.event ? [values.event] : []), positiveInt(values.limit, '--limit'))
+    printRows(rows)
+    break
+  }
+  case 'audit-prune': {
+    // Never automatic: how long to keep the record is the operator's call.
+    const days = positiveInt(need(values.days, '--days'), '--days')
+    const { changes } = db.prepare('DELETE FROM audit_events WHERE ts < ?').run(now - days * 86_400_000)
+    console.log(`Deleted ${changes} audit events older than ${days} days`)
     break
   }
   default:
     console.log(`Commands: agent-add <name> | agent-disable <name> | account-add <id> --site --username [--label] [--max-minutes]
           account-remove <id> | grant <agent> <account> [--transactions] [--approval prompt|chat|auto] | revoke-grant <agent> <account>
-          grants | chat-telegram --chat-id <id> | chat-discord --user-id <id> [--channel-id <id>] (bot token on stdin)
-          pubkeys | pair-helper (PEM on stdin) | sites | accounts | sessions | audit [--event] [--limit] [--json]`)
+          grants [--json] | chat-telegram --chat-id <id> | chat-discord --user-id <id> [--channel-id <id>] (bot token on stdin)
+          pubkeys | pair-helper (PEM on stdin) | sites | accounts | sessions | audit [--event] [--limit] [--json] | audit-prune --days <n>`)
 }
 db.close()

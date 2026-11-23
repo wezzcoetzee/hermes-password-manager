@@ -37,7 +37,7 @@ const { values, positionals } = parseArgs({
   args: rest, allowPositionals: true, strict: false,
   options: {
     site: { type: 'string' }, username: { type: 'string' }, label: { type: 'string' }, transactions: { type: 'boolean' }, agent: { type: 'string' },
-    approval: { type: 'string' }, 'chat-id': { type: 'string' }, 'user-id': { type: 'string' }, 'channel-id': { type: 'string' },
+    approval: { type: 'string' }, days: { type: 'string' }, 'chat-id': { type: 'string' }, 'user-id': { type: 'string' }, 'channel-id': { type: 'string' },
   },
 })
 
@@ -54,7 +54,12 @@ function siteOrigin(siteId: string): string {
 /**
  * The helper keeps its own per-account flag, so a chat or auto grant in the broker alone never
  * releases a password without a prompt. Turning it on asks for confirmation in the helper's UI.
+ * The flag belongs to the account, so it stays on while any agent holds a chat or auto grant for it.
  */
+const unattendedNeeded = (accountId: string) =>
+  (JSON.parse(admin(['grants', '--json'])) as { account_id: string; approval: string }[])
+    .some((g) => g.account_id === accountId && g.approval !== 'prompt')
+
 function setUnattended(accountId: string, on: boolean) {
   if (on) return helper(['unattended', '--account', accountId], undefined, true)
   // Clearing is best effort: the credential may already be gone, and a prompt grant never asks for unattended release.
@@ -93,6 +98,8 @@ switch (command) {
     const id = positionals[0]
     if (!id || typeof values.site !== 'string') throw new Error('Usage: agentvault credential rotate <account-id> --site <site-id>')
     helper(['enroll', '--account', id, '--origin', siteOrigin(values.site), ...optional('--username', values.username)])
+    // Re-enrolling clears the helper's unattended flag; chat and auto grants would otherwise prompt twice.
+    if (unattendedNeeded(id)) setUnattended(id, true)
     console.log(`Rotated ${id}`)
     break
   }
@@ -115,10 +122,10 @@ switch (command) {
     try {
       admin(['grant', agent, id, ...(values.transactions ? ['--transactions'] : []), '--approval', approval])
     } catch (err) {
-      if (unattended) setUnattended(id, false)
+      if (unattended && !unattendedNeeded(id)) setUnattended(id, false)
       throw err
     }
-    if (values.approval === 'prompt') setUnattended(id, false)
+    if (!unattended && !unattendedNeeded(id)) setUnattended(id, false)
     const logins = { prompt: 'on this Mac', chat: 'in chat (Telegram or Discord, whichever is set up)', auto: 'automatically, without asking' }[approval]
     console.log(`Granted ${agent} access to ${id}; logins are approved ${logins}${values.transactions ? '. Transactions allowed, each one still needs your approval on this Mac' : ''}`)
     break
@@ -127,7 +134,7 @@ switch (command) {
     const id = positionals[0]
     if (!id) throw new Error('Usage: agentvault revoke <account-id> [--agent hermes]')
     admin(['revoke-grant', agent, id])
-    setUnattended(id, false)
+    if (!unattendedNeeded(id)) setUnattended(id, false)
     break
   }
   case 'chat telegram': {
@@ -147,6 +154,7 @@ switch (command) {
     break
   }
   case 'audit':
+  case 'audit-prune':
   case 'sessions':
   case 'accounts':
   case 'grants':
@@ -170,5 +178,6 @@ switch (command) {
   chat discord --user-id <id> [--channel-id <id>]    or Discord: DMs from AgentVault's bot, or posts in a channel,
                                                      where Hermes' bot may be reused; the one set up last is used
   audit [--event e] [--limit n] [--json]             show audit events
+  audit-prune --days <n>                             delete audit events older than n days
   sessions | accounts | grants | status`)
 }

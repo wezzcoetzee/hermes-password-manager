@@ -4,7 +4,7 @@
 
 | Component | Runs | Responsibility | Holds |
 |---|---|---|---|
-| MCP adapter (`src/mcp-adapter`) | Host, spawned by Hermes over stdio | Validates tool input (zod), forwards to broker with the agent bearer token, 180s timeout for approval tools, 60s otherwise | Agent token (read from `AGENTVAULT_TOKEN_FILE`) |
+| MCP adapter (`src/mcp-adapter`) | Host, spawned by Hermes over stdio | Validates tool input (zod), forwards to broker with the agent bearer token, 295s timeout for approval tools (`APPROVAL_TOOL_TIMEOUT_MS`), 60s otherwise | Agent token (read from `AGENTVAULT_TOKEN_FILE`) |
 | credential-broker (`src/broker`) | Docker, published `127.0.0.1:7800` | AuthN of agents, grants, session state, approvals, audit, all policy decisions. Internal API on `:7801` for the worker. Optional Telegram long poll or Discord reaction polling for chat login approvals | SQLite DB, broker keypairs (volume `broker-data`), worker token (docker secret), chat bot token (`settings`) |
 | browser-worker (`src/browser-worker`) | Docker, no published port | Playwright Chromium contexts, one per session; network guard; types the password; reads order summary; scrubs output | Session cookies and the password transiently, in memory |
 | Native helper (`native/AgentVaultHelper`) | Host, LaunchAgent in the GUI session | Keychain storage, native prompts, Touch ID, signs responses, seals credentials | Passwords (Keychain), helper keypair, pinned broker keys |
@@ -167,8 +167,8 @@ stateDiagram-v2
   anonymous --> authenticated: approved login (expiry reset)
   anonymous --> expired: timeout
   authenticated --> expired: timeout
-  anonymous --> revoked: revoke_session
-  authenticated --> revoked: revoke_session
+  anonymous --> revoked: revoke_session or agent disabled
+  authenticated --> revoked: revoke_session, grant revoked, account removed or agent disabled
   anonymous --> terminated: broker boot
   authenticated --> terminated: broker boot
   expired --> [*]
@@ -176,7 +176,7 @@ stateDiagram-v2
   terminated --> [*]
 ```
 
-Expiry is enforced three ways: on each access (`liveSession`), by a 15s sweeper in the broker, and by a timer in the worker. Revoke and boot also expire pending and approved transaction approvals. Closing a session destroys its Chromium context (cookies included). The broker calls `close-all` on the worker at startup, retrying every 3s up to 20 times.
+Expiry is enforced three ways: on each access (`liveSession`), by a 15s sweeper in the broker, and by a timer in the worker. The same access check and sweeper revoke sessions whose agent was disabled, and signed-in sessions whose grant or account was removed; admin commands change only grants, accounts and agents. Ending a session also expires its pending and approved transaction approvals, and so does boot. A new `request_transaction_approval` expires the session's earlier approvals, so only the latest decision counts. Closing a session destroys its Chromium context (cookies included). The broker calls `close-all` on the worker at startup, retrying every 3s up to 20 times.
 
 ## Broker to helper protocol
 
@@ -202,7 +202,7 @@ Binding the key to `requestId` means a sealed credential cannot be replayed unde
 
 **Pairing** (`agentvault pair`): the CLI fetches both broker public keys (`admin pubkeys`), pipes them to `helper pair`, which stores them and prints the helper public key; the CLI pipes that to `admin pair-helper`, which stores it in `settings`. Broker private keys exist only in the `broker-data` volume, never on the macOS filesystem. Re-pairing is a deliberate admin act.
 
-Approval timeout: 120s (`APPROVAL_TIMEOUT_MS`); the broker's HTTP timeout is 130s.
+Approval timeout: 120s (`APPROVAL_TIMEOUT_MS`); the broker's HTTP timeout is 130s (`HELPER_TIMEOUT_MS`). The adapter's 295s budget for approval tools is the sum of a chat approval, a helper call and a worker call, so a `chat` grant on an account without the unattended flag normally fits. If the adapter still times out, the broker finishes the request and the agent is told to check its status.
 
 ## Broker to worker
 
