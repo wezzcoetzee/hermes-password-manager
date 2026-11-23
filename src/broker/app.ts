@@ -52,7 +52,7 @@ export function createBrokerApp({ db, identity, sites, helperUrl, workerUrl, wor
   const worker = createWorkerClient(workerUrl, workerToken)
   const broker = createBroker({ db, sites, helper, chat, worker, audit })
   broker.terminateStaleSessions()
-  const sweeper = setInterval(broker.expireSessions, 15_000)
+  const sweeper = setInterval(broker.sweepSessions, 15_000)
   sweeper.unref()
   return {
     broker,

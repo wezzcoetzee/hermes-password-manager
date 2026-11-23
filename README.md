@@ -142,11 +142,11 @@ mcp_servers:
     env:
       AGENTVAULT_BROKER_URL: "http://127.0.0.1:7800"
       AGENTVAULT_TOKEN_FILE: "/Users/<you>/.agentvault/agent-token"
-    timeout: 200          # approvals wait up to 120s for you
+    timeout: 320          # a chat approval plus a native prompt can take up to 295s
     connect_timeout: 30
 ```
 
-Keep `timeout` at 180 or more: the adapter allows 180s for `request_login` and `request_transaction_approval`.
+Keep `timeout` at 300 or more: the adapter allows 295s for `request_login` and `request_transaction_approval` (`APPROVAL_TOOL_TIMEOUT_MS` in `src/shared/tools.ts`).
 
 ## Testing
 

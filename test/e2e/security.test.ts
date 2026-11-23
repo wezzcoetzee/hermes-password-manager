@@ -144,6 +144,18 @@ describe('transaction boundary', () => {
     expect(sys.shop.orders.length).toBe(placed)
   })
 
+  it('a later denial cancels an earlier approval for the same session', async () => {
+    const sessionId = await signedInSession()
+    await toCheckout(sessionId)
+    sys.decisions.push('approved')
+    expect((await call(hermes, 'request_transaction_approval', { sessionId })).data.status).toBe('approved')
+    sys.decisions.push('denied')
+    expect((await call(hermes, 'request_transaction_approval', { sessionId })).data.status).toBe('denied')
+    const before = sys.shop.orders.length
+    expect((await placeOrder(sessionId)).transaction).toEqual({ status: 'blocked', reason: 'no_valid_approval' })
+    expect(sys.shop.orders.length).toBe(before)
+  })
+
   it('expired approvals are rejected', async () => {
     const sessionId = await signedInSession()
     await toCheckout(sessionId)
@@ -233,6 +245,36 @@ describe('accounts and sessions', () => {
     const sessionId = await signedInSession()
     expect((await call(hermes, 'revoke_session', { sessionId })).data.state).toBe('revoked')
     expect((await call(hermes, 'browser_snapshot', { sessionId })).error).toMatch(/^session_revoked/)
+  })
+
+  it('revoking a grant ends sessions signed in through it, on the next call or sweep', async () => {
+    const grant = sys.db.prepare("SELECT * FROM grants WHERE agent_id = 'agt_hermes' AND account_id = 'test-shop-main'").get() as Record<string, string | number>
+    const restore = () => sys.db.prepare('INSERT INTO grants (agent_id, account_id, allow_transactions, approval) VALUES (?, ?, ?, ?)').run(grant.agent_id ?? '', grant.account_id ?? '', grant.allow_transactions ?? 0, grant.approval ?? 'prompt')
+    const [touched, swept] = [await signedInSession(), await signedInSession()]
+    const anonymous = (await call(hermes, 'browser_navigate', { url: `${sys.origin}/` })).data.sessionId
+    sys.db.prepare("DELETE FROM grants WHERE agent_id = 'agt_hermes' AND account_id = 'test-shop-main'").run()
+    try {
+      expect((await call(hermes, 'browser_snapshot', { sessionId: touched })).error).toMatch(/^session_revoked/)
+      expect((await call(hermes, 'get_session_status', { sessionId: swept })).data.state).toBe('revoked')
+      sys.app.broker.sweepSessions()
+    } finally {
+      restore()
+    }
+    // The grant is back, but revocation is final; sessions that never signed in are untouched.
+    expect((await call(hermes, 'browser_snapshot', { sessionId: swept })).error).toMatch(/^session_revoked/)
+    expect((await call(hermes, 'get_session_status', { sessionId: anonymous })).data.state).toBe('anonymous')
+  })
+
+  it('disabling an agent ends its sessions on the next sweep', async () => {
+    const sessionId = await signedInSession()
+    const disable = sys.db.prepare("UPDATE agents SET disabled = ? WHERE id = 'agt_hermes'")
+    disable.run(1)
+    try {
+      sys.app.broker.sweepSessions()
+    } finally {
+      disable.run(0)
+    }
+    expect((await call(hermes, 'get_session_status', { sessionId })).data.state).toBe('revoked')
   })
 
   it('a broker restart terminates every session left from the previous run', async () => {

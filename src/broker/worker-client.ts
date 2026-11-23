@@ -1,9 +1,9 @@
 import { postJson } from '../shared/http.ts'
 import type { Site } from '../shared/sites.ts'
-import { WORKER_TOKEN_HEADER, type ActionResult, type WorkerAction } from '../shared/worker-protocol.ts'
+import { WORKER_TIMEOUT_MS, WORKER_TOKEN_HEADER, type ActionResult, type WorkerAction } from '../shared/worker-protocol.ts'
 
 export function createWorkerClient(baseUrl: string, token: string) {
-  const call = <T>(path: string, body: object, timeoutMs = 45_000) =>
+  const call = <T>(path: string, body: object, timeoutMs = WORKER_TIMEOUT_MS) =>
     postJson<T>(`${baseUrl}${path}`, body, { [WORKER_TOKEN_HEADER]: token }, timeoutMs)
   return {
     open: (sessionId: string, site: Site, expiresAt: number) => call('/sessions/open', { sessionId, site, expiresAt }),

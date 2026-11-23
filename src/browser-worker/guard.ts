@@ -3,7 +3,7 @@
  * (navigations, redirects, sub-resources), not just to agent-issued URLs.
  */
 import { lookup } from 'node:dns/promises'
-import { isIP } from 'node:net'
+import { BlockList, isIP } from 'node:net'
 import { siteOrigins, type Site } from '../shared/sites.ts'
 
 /** Generic purchase-like paths. Used only for sites without a checkout adapter, to force manual checkout. */
@@ -14,16 +14,20 @@ export type Verdict =
   | { allow: false; reason: 'origin_not_allowed' | 'private_network' | 'scheme_not_allowed' | 'manual_checkout_required' }
   | { allow: 'transaction' }
 
-function isPrivateAddress(ip: string): boolean {
-  if (isIP(ip) === 6) {
-    const v = ip.toLowerCase()
-    if (v.startsWith('::ffff:')) return isPrivateAddress(v.slice(7))
-    return v === '::1' || v === '::' || v.startsWith('fc') || v.startsWith('fd') || v.startsWith('fe8') || v.startsWith('fe9') || v.startsWith('fea') || v.startsWith('feb')
-  }
-  const [a = 0, b = 0] = ip.split('.').map(Number)
-  return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || a >= 224
+/**
+ * Everything that is not plainly a public unicast address. BlockList also matches IPv4-mapped IPv6
+ * (`::ffff:7f00:1`, which is how URL writes `[::ffff:127.0.0.1]`) against the IPv4 ranges.
+ * NAT64 and 6to4 embed any IPv4 address, so they are refused rather than decoded.
+ */
+const PRIVATE_RANGES = new BlockList()
+for (const [net, prefix] of [['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12], ['192.0.0.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15], ['224.0.0.0', 3]] as const) {
+  PRIVATE_RANGES.addSubnet(net, prefix, 'ipv4')
 }
+for (const [net, prefix] of [['::', 96], ['64:ff9b::', 96], ['64:ff9b:1::', 48], ['2002::', 16], ['fc00::', 7], ['fe80::', 10], ['ff00::', 8]] as const) {
+  PRIVATE_RANGES.addSubnet(net, prefix, 'ipv6')
+}
+
+const isPrivateAddress = (ip: string) => PRIVATE_RANGES.check(ip, isIP(ip) === 6 ? 'ipv6' : 'ipv4')
 
 export async function resolvesToPrivate(hostname: string): Promise<boolean> {
   const host = hostname.replace(/^\[|\]$/g, '')

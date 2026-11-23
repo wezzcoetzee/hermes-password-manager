@@ -13,9 +13,9 @@ const withCheckout = siteSchema.parse({
 const manual = siteSchema.parse({ ...base, checkout: null })
 
 describe('resolvesToPrivate', () => {
-  it.each(['127.0.0.1', '10.1.2.3', '172.20.0.1', '192.168.1.1', '169.254.169.254', '100.72.52.5', '0.0.0.0', '[::1]', '[fd00::1]', '[::ffff:127.0.0.1]', 'localhost', 'host.docker.internal', 'mac.local'])(
+  it.each(['127.0.0.1', '10.1.2.3', '172.20.0.1', '192.168.1.1', '169.254.169.254', '100.72.52.5', '0.0.0.0', '[::1]', '[fd00::1]', '[::ffff:127.0.0.1]', '[::ffff:7f00:1]', '[::ffff:a9fe:a9fe]', '198.18.0.1', '[64:ff9b::a00:1]', '[2002:a00:1::]', '[fe80::1]', 'localhost', 'host.docker.internal', 'mac.local'])(
     '%s is private', async (host) => expect(await resolvesToPrivate(host)).toBe(true))
-  it('public addresses are not private', async () => expect(await resolvesToPrivate('93.184.215.14')).toBe(false))
+  it.each(['93.184.215.14', '[2606:4700:4700::1111]'])('%s is public', async (host) => expect(await resolvesToPrivate(host)).toBe(false))
   it('unresolvable hosts fail closed', async () => expect(await resolvesToPrivate('does-not-exist.invalid')).toBe(true))
 })
 

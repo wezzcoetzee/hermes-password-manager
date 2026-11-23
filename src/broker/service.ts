@@ -51,17 +51,45 @@ export function createBroker({ db, sites, helper, chat, worker, audit, now = Dat
 
   const GRANT_SELECT = 'SELECT a.id, a.site_id, a.username, a.label, a.max_session_minutes, g.allow_transactions, g.approval FROM grants g JOIN accounts a ON a.id = g.account_id WHERE g.agent_id = ?'
   const grantsFor = (agent: AgentRow) => db.prepare(GRANT_SELECT).all(agent.id) as unknown as (AccountRow & GrantRow)[]
-  const grant = (agent: AgentRow, accountId: string) => db.prepare(`${GRANT_SELECT} AND a.id = ?`).get(agent.id, accountId) as (AccountRow & GrantRow) | undefined
+  const grant = (agentId: string, accountId: string) => db.prepare(`${GRANT_SELECT} AND a.id = ?`).get(agentId, accountId) as (AccountRow & GrantRow) | undefined
+  const agentDisabled = (agentId: string) => (db.prepare('SELECT disabled FROM agents WHERE id = ?').get(agentId) as { disabled: number } | undefined)?.disabled !== 0
+
+  /** Approvals only count for the latest request in a live session. */
+  const expireApprovals = (sessionId: string) =>
+    db.prepare("UPDATE transaction_approvals SET status = 'expired' WHERE session_id = ? AND status IN ('pending', 'approved')").run(sessionId)
+
+  /**
+   * Why a live session must end now, if it must. Admin commands only change grants and agents, so
+   * this is how a revoked grant, a removed account or a disabled agent reaches sessions already open.
+   */
+  function endReason(session: SessionRow): 'expired' | 'revoked' | undefined {
+    if (!LIVE_STATES.has(session.state)) return undefined
+    if (session.expires_at <= now()) return 'expired'
+    if (agentDisabled(session.agent_id)) return 'revoked'
+    if (session.state === 'authenticated' && !(session.account_id && grant(session.agent_id, session.account_id))) return 'revoked'
+    return undefined
+  }
+
+  /**
+   * Ends a session and its approvals now, and returns once its browser context is closed. Safe to call
+   * more than once. Not async, so a database error reaches the caller instead of becoming an unhandled rejection.
+   */
+  function endSession(session: Pick<SessionRow, 'id' | 'agent_id'>, state: 'expired' | 'revoked'): Promise<void> {
+    const ended = db.prepare("UPDATE sessions SET state = ? WHERE id = ? AND state IN ('anonymous', 'authenticated')").run(state, session.id)
+    expireApprovals(session.id)
+    if (ended.changes === 1) audit({ event: `session_${state}`, outcome: state, agentId: session.agent_id, sessionId: session.id })
+    // The worker also closes contexts on its own expiry timer, so a failed close is not fatal.
+    return worker.close(session.id).then(() => undefined, () => undefined)
+  }
 
   /** Loads a session the agent owns and that is still live. Cross-agent ids look identical to unknown ids. */
   function liveSession(agent: AgentRow, sessionId: string): SessionRow {
     const session = db.prepare('SELECT * FROM sessions WHERE id = ? AND agent_id = ?').get(sessionId, agent.id) as SessionRow | undefined
     if (!session) throw new HttpError(404, 'session_not_found', 'Unknown session')
-    if (LIVE_STATES.has(session.state) && session.expires_at <= now()) {
-      db.prepare("UPDATE sessions SET state = 'expired' WHERE id = ?").run(session.id)
-      audit({ event: 'session_expired', outcome: 'expired', agentId: agent.id, sessionId })
-      void worker.close(session.id).catch(() => undefined)
-      session.state = 'expired'
+    const reason = endReason(session)
+    if (reason) {
+      void endSession(session, reason)
+      session.state = reason
     }
     if (!LIVE_STATES.has(session.state)) throw new HttpError(410, `session_${session.state}`, `Session is ${session.state}`)
     return session
@@ -90,7 +118,7 @@ export function createBroker({ db, sites, helper, chat, worker, audit, now = Dat
 
   async function requestLogin(agent: AgentRow, { sessionId, accountId, durationMinutes }: ToolInput<'request_login'>) {
     const session = liveSession(agent, sessionId)
-    const account = grant(agent, accountId)
+    const account = grant(agent.id, accountId)
     if (!account) throw forbidden(agent, 'Agent has no grant for this account', { sessionId, accountId })
     if (account.site_id !== session.site_id) throw forbidden(agent, 'Account belongs to a different site than this session', { sessionId, accountId })
     if (session.state !== 'anonymous') throw new HttpError(409, 'already_authenticated', 'Session is already signed in; open a new session for another account')
@@ -130,7 +158,7 @@ export function createBroker({ db, sites, helper, chat, worker, audit, now = Dat
 
   async function requestTransactionApproval(agent: AgentRow, { sessionId }: ToolInput<'request_transaction_approval'>) {
     const session = liveSession(agent, sessionId)
-    const account = session.account_id ? grant(agent, session.account_id) : undefined
+    const account = session.account_id ? grant(agent.id, session.account_id) : undefined
     if (session.state !== 'authenticated' || !account) throw forbidden(agent, 'Transactions require an authenticated session', { sessionId })
     if (!account.allow_transactions) throw forbidden(agent, 'This agent is not permitted to make transactions on this account', { sessionId, accountId: account.id })
     const site = siteFor(session.site_id)
@@ -139,14 +167,24 @@ export function createBroker({ db, sites, helper, chat, worker, audit, now = Dat
     const { orderSummary, summaryHash } = await worker.act(sessionId, { type: 'order_summary' })
     if (!orderSummary || !summaryHash) throw new HttpError(422, 'summary_unavailable', 'Could not read the order summary from the checkout page')
     const id = opaqueId('txn')
+    // A new request supersedes earlier ones, so a later denial is never outvoted by an older approval.
+    expireApprovals(sessionId)
     db.prepare("INSERT INTO transaction_approvals (id, session_id, agent_id, summary_hash, merchant, total, currency, status, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)")
       .run(id, sessionId, agent.id, summaryHash, orderSummary.merchant, orderSummary.total, orderSummary.currency, now(), now() + TRANSACTION_APPROVAL_TTL_MS)
     audit({ event: 'transaction_approval', outcome: 'requested', agentId: agent.id, sessionId, accountId: account.id, detail: { approvalId: id, total: orderSummary.total, currency: orderSummary.currency } })
 
-    const decision = await helper.approveTransaction({ requestId: id, agent: agent.name, site: { name: site.name, origin: site.origin }, summary: orderSummary })
-    // The TTL starts when the user decides, not when the prompt appeared.
+    let decision: Decision
+    try {
+      decision = await helper.approveTransaction({ requestId: id, agent: agent.name, site: { name: site.name, origin: site.origin }, summary: orderSummary })
+    } catch (err) {
+      db.prepare("UPDATE transaction_approvals SET status = 'expired' WHERE id = ?").run(id)
+      throw err
+    }
+    // The TTL starts when the user decides, not when the prompt appeared. A request that was expired
+    // meanwhile (session ended) stays expired, whatever the answer.
     const expiresAt = now() + TRANSACTION_APPROVAL_TTL_MS
-    db.prepare('UPDATE transaction_approvals SET status = ?, expires_at = ? WHERE id = ?').run(decision === 'approved' ? 'approved' : 'denied', expiresAt, id)
+    const recorded = db.prepare("UPDATE transaction_approvals SET status = ?, expires_at = ? WHERE id = ? AND status = 'pending'").run(decision === 'approved' ? 'approved' : 'denied', expiresAt, id)
+    if (recorded.changes !== 1) decision = 'unavailable'
     audit({ event: 'transaction_approval', outcome: decision, agentId: agent.id, sessionId, accountId: account.id, detail: { approvalId: id } })
     return { approvalId: id, status: decision === 'approved' ? 'approved' : 'denied', summary: orderSummary, ...(decision === 'approved' ? { expiresAt: new Date(expiresAt).toISOString(), next: 'Click the merchant\'s place-order button now. The approval works once.' } : {}) }
   }
@@ -180,18 +218,16 @@ export function createBroker({ db, sites, helper, chat, worker, audit, now = Dat
     async get_session_status(agent, { sessionId }) {
       const row = db.prepare('SELECT * FROM sessions WHERE id = ? AND agent_id = ?').get(sessionId, agent.id) as SessionRow | undefined
       if (!row) throw new HttpError(404, 'session_not_found', 'Unknown session')
-      const state = LIVE_STATES.has(row.state) && row.expires_at <= now() ? 'expired' : row.state
+      const state = endReason(row) ?? row.state
       return { sessionId, state, site: siteFor(row.site_id).name, accountId: row.account_id, expiresAt: new Date(row.expires_at).toISOString() }
     },
 
     async revoke_session(agent, { sessionId }) {
-      const row = db.prepare('SELECT id FROM sessions WHERE id = ? AND agent_id = ?').get(sessionId, agent.id)
+      const row = db.prepare('SELECT * FROM sessions WHERE id = ? AND agent_id = ?').get(sessionId, agent.id) as SessionRow | undefined
       if (!row) throw new HttpError(404, 'session_not_found', 'Unknown session')
-      db.prepare("UPDATE sessions SET state = 'revoked' WHERE id = ? AND state IN ('anonymous', 'authenticated')").run(sessionId)
-      db.prepare("UPDATE transaction_approvals SET status = 'expired' WHERE session_id = ? AND status IN ('pending', 'approved')").run(sessionId)
-      await worker.close(sessionId)
-      audit({ event: 'session_revoked', outcome: 'revoked', agentId: agent.id, sessionId })
-      return { sessionId, state: 'revoked' }
+      await endSession(row, 'revoked')
+      // A session that had already ended keeps the state it ended with.
+      return { sessionId, state: LIVE_STATES.has(row.state) ? 'revoked' : row.state }
     },
 
     browser_snapshot: async (agent, { sessionId }) => (await act(agent, liveSession(agent, sessionId), { type: 'snapshot' })).snapshot,
@@ -218,7 +254,7 @@ export function createBroker({ db, sites, helper, chat, worker, audit, now = Dat
       audit({ event: 'transaction_execution', outcome: 'blocked', agentId: session?.agent_id, sessionId, accountId: session?.account_id, detail: { reason } })
       return { allowed: false, reason }
     }
-    if (!session || session.state !== 'authenticated' || session.expires_at <= now()) return deny('session_not_authenticated')
+    if (!session || session.state !== 'authenticated' || endReason(session)) return deny('session_not_authenticated')
     const approval = db.prepare("SELECT * FROM transaction_approvals WHERE session_id = ? AND status = 'approved' ORDER BY created_at DESC LIMIT 1").get(sessionId) as ApprovalRow | undefined
     if (!approval) return deny('no_valid_approval')
     if (approval.expires_at <= now()) {
@@ -238,16 +274,16 @@ export function createBroker({ db, sites, helper, chat, worker, audit, now = Dat
     db.prepare("UPDATE transaction_approvals SET status = 'expired' WHERE status IN ('pending', 'approved')").run()
   }
 
-  function expireSessions() {
-    const stale = db.prepare("SELECT id, agent_id FROM sessions WHERE state IN ('anonymous', 'authenticated') AND expires_at <= ?").all(now()) as { id: string; agent_id: string }[]
-    for (const s of stale) {
-      db.prepare("UPDATE sessions SET state = 'expired' WHERE id = ?").run(s.id)
-      audit({ event: 'session_expired', outcome: 'expired', agentId: s.agent_id, sessionId: s.id })
-      void worker.close(s.id).catch(() => undefined)
+  /** Periodic backstop for sessions no tool call touches: expiry, revoked grants, removed accounts, disabled agents. */
+  function sweepSessions() {
+    const live = db.prepare("SELECT * FROM sessions WHERE state IN ('anonymous', 'authenticated')").all() as unknown as SessionRow[]
+    for (const session of live) {
+      const reason = endReason(session)
+      if (reason) void endSession(session, reason)
     }
   }
 
-  return { handlers, consumeTransaction, terminateStaleSessions, expireSessions }
+  return { handlers, consumeTransaction, terminateStaleSessions, sweepSessions }
 }
 
 export type Broker = ReturnType<typeof createBroker>

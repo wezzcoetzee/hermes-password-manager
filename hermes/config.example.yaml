@@ -7,5 +7,5 @@ mcp_servers:
     env:
       AGENTVAULT_BROKER_URL: "http://127.0.0.1:7800"
       AGENTVAULT_TOKEN_FILE: "__HOME__/agent-token"
-    timeout: 200                          # approvals wait up to 120s for you
+    timeout: 320                          # a chat approval plus a native prompt can take up to 295s
     connect_timeout: 30

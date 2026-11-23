@@ -20,11 +20,11 @@ Prerequisites: Docker Desktop, Node 24, Xcode CLT (Swift 5.9+). The script is ex
 | `pair` | Exchanges keys between the broker and the native helper. Run it again after reinstalling either one. See [architecture](architecture.md) |
 | `credential add <id> --site <site> [--username u] [--label l]` | Saves a password. The helper asks for the username (if not given) and the password, then stores them in the Keychain. The broker records the account. `<site>` must be a reviewed adapter in `sites/`; unknown ids print the known list |
 | `credential rotate <id> --site <site> [--username u]` | Replaces the stored password through the same helper prompt. The broker record and grants stay as they are |
-| `credential remove <id>` | Deletes the Keychain item and the broker account, revoking its live sessions |
+| `credential remove <id>` | Deletes the Keychain item and the broker account. The broker revokes sessions signed in to it within 15s |
 | `accounts` | Lists saved accounts: id, site, label and maximum session length. Passwords are never shown, since only the Keychain holds them |
 | `grant <id> [--transactions] [--approval prompt\|chat\|auto] [--agent name]` | Lets an agent (default `hermes`) use an account. `--transactions` allows purchase approval requests. Approval modes are described [below](#login-approval-modes). Running it again updates the grant |
-| `revoke <id> [--agent name]` | Removes the grant and clears the helper's unattended flag |
-| `grants` | Lists each grant's agent, account, transaction right and approval mode |
+| `revoke <id> [--agent name]` | Removes the grant. The broker revokes that agent's sessions signed in to the account within 15s. Clears the helper's unattended flag unless another agent still has a `chat` or `auto` grant for the account |
+| `grants [--json]` | Lists each grant's agent, account, transaction right and approval mode |
 | `chat telegram --chat-id <id>` | Sets up [Telegram approvals](#set-up-telegram-approval) |
 | `chat discord --user-id <id> [--channel-id <id>]` | Sets up [Discord approvals](#set-up-discord-approval), in DMs or in a shared channel. The chat provider set up last is the one used |
 | `sessions` | Lists the 20 most recent browser sessions with state and expiry |
@@ -62,6 +62,7 @@ Check: `agentvault status` (compose state and token presence).
 ```bash
 agentvault audit                       # last 50
 agentvault audit --event credential_access --limit 20 --json
+agentvault audit-prune --days 90        # delete older events; nothing is pruned automatically
 agentvault sessions; agentvault accounts
 ```
 
@@ -79,7 +80,7 @@ Each grant chooses who approves its logins. Purchases always use the native prom
 | `chat` | `agentvault grant <id> --approval chat` | You, by tapping Approve once in Telegram or reacting ✅ in Discord within 120s |
 | `auto` | `agentvault grant <id> --approval auto` | Nobody; the login is audited as `auto_approved` |
 
-`chat` and `auto` first ask the helper to mark the account unattended, with a native confirmation and Touch ID. Without that flag the helper still prompts. The flag belongs to the account, not the grant: `--approval prompt` or `revoke` for any agent clears it, and other agents' `chat` or `auto` grants on that account then fall back to the native prompt. Re-enrolling a credential (`credential rotate`) also clears it. On a `chat` grant without the flag, the native prompt follows the chat approval; rerun `agentvault grant <id> --approval chat` to set it again. A plain `grant <id>` sets the broker grant back to `prompt` but leaves the helper flag alone.
+`chat` and `auto` first ask the helper to mark the account unattended, with a native confirmation and Touch ID. Without that flag the helper still prompts. The flag belongs to the account, not the grant. Setting a grant back to `prompt` (with or without `--approval prompt`) or revoking it clears the flag once no agent has a `chat` or `auto` grant left on that account. Re-enrolling a credential clears it in the helper, so `credential rotate` asks to set it again when such a grant exists. On a `chat` grant without the flag, the native prompt follows the chat approval; rerun `agentvault grant <id> --approval chat` to set it again.
 
 ### Set up Telegram approval
 
@@ -119,7 +120,7 @@ Each login sends a message with ✅ and ❌ already added. React ✅ to approve 
 ## Revoking access
 
 - One account: `agentvault revoke <id>`; remove it with `agentvault credential remove <id>` (deletes the Keychain item and broker record).
-- An agent: `docker compose exec broker node src/broker/admin.ts agent-disable hermes`.
+- An agent: `docker compose exec broker node src/broker/admin.ts agent-disable hermes`. Its tool calls fail at once and the broker revokes its sessions within 15s.
 - Live session: Hermes calls `revoke_session`, or `docker compose restart broker` terminates all.
 
 ## Adding a site adapter

@@ -36,7 +36,7 @@ Ask whether to sign with a Developer ID (`AGENTVAULT_SIGN_IDENTITY`) so rebuilds
 ## 3. Connect the agent
 
 - **Hermes:** the installer runs `hermes mcp add` and copies [`hermes/SKILL.md`](../../hermes/SKILL.md) to `~/.hermes/skills/agentvault/`. If `hermes` was missing it printed a config instead; with approval, merge it into `~/.hermes/config.yaml` using [`hermes/config.example.yaml`](../../hermes/config.example.yaml) and [README: Hermes config](../../README.md#hermes-config).
-- **Other MCP clients:** register a stdio server with an absolute `node` path, args `<repo>/src/mcp-adapter/main.ts`, and env `AGENTVAULT_BROKER_URL=http://127.0.0.1:7800`, `AGENTVAULT_TOKEN_FILE=~/.agentvault/agent-token` (absolute path). Set the tool timeout to 180s or more. Give the agent `hermes/SKILL.md` as its usage instructions.
+- **Other MCP clients:** register a stdio server with an absolute `node` path, args `<repo>/src/mcp-adapter/main.ts`, and env `AGENTVAULT_BROKER_URL=http://127.0.0.1:7800`, `AGENTVAULT_TOKEN_FILE=~/.agentvault/agent-token` (absolute path). Set the tool timeout to 300s or more. Give the agent `hermes/SKILL.md` as its usage instructions.
 
 ## 4. Accounts and approvals
 

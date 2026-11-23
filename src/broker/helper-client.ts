@@ -1,7 +1,7 @@
 import type { z } from 'zod'
 import { open, requestSigningInput, responseSigningInput, signData, verifyData, type Identity } from '../shared/crypto.ts'
 import {
-  APPROVAL_TIMEOUT_MS, HELPER_PATHS, credentialSchema, loginResultSchema, signedResponseSchema, transactionResultSchema,
+  HELPER_PATHS, HELPER_TIMEOUT_MS, credentialSchema, loginResultSchema, signedResponseSchema, transactionResultSchema,
   type Credential, type Decision, type LoginRequest, type TransactionRequest,
 } from '../shared/helper-protocol.ts'
 import { HttpError } from '../shared/http.ts'
@@ -31,7 +31,7 @@ export function createHelperClient(baseUrl: string, identity: Identity, helperPu
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-av-ts': ts, 'x-av-nonce': nonce, 'x-av-signature': signature },
         body: raw,
-        signal: AbortSignal.timeout(APPROVAL_TIMEOUT_MS + 10_000),
+        signal: AbortSignal.timeout(HELPER_TIMEOUT_MS),
       }).then((r) => (r.ok ? r.json() : Promise.reject(new Error(`helper HTTP ${r.status}`))))
     } catch {
       throw new HttpError(503, 'helper_unavailable', 'Native approval helper is not reachable; nothing was approved.')
